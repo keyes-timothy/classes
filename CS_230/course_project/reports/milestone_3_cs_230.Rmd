@@ -1,0 +1,297 @@
+---
+title: "Milestone 2 - Using deep autoencoder feature embeddings to explore single-cell phenotypes in pediatric cancer"
+author: "Timothy Keyes"
+date: "`r Sys.Date()`"
+output: pdf_document
+urlcolor: blue
+
+---
+
+```{r setup, include=FALSE, warning = FALSE, message = FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+```{r message=FALSE, warning=FALSE}
+# Libraries
+library(tidyverse)
+library(rlang)
+library(reticulate)
+
+# Parameters
+
+data_path <- here::here("CS_230", "course_project", "data")
+big_data_path <- here::here("CS_230", "course_project", "data", "DDPR_data.rds")
+saucie_data_path <- here::here("CS_230", "course_project", "data", "sampled_DDPR_data.rds")
+saucie_output_path <- here::here("CS_230", "course_project", "data", "saucie_output.csv")
+classifier_data_path <- here::here("CS_230", "course_project", "data", "classifier_saucie_result.rds")
+plot_out_path <- here::here("CS230", "course_project", "eda")
+
+metadata <- c("patient")
+
+CLASSIFIER_POPULATIONS <-
+  c(
+    "HSC", 
+    "Progenitor_1", 
+    "Progenitor_2", 
+    "Progenitor_3", 
+    "Pre_Pro_B", 
+    "Pro_B1", 
+    "Pro_B2", 
+    "Pre_B1", 
+    "Pre_B2", 
+    "Early_Progenitors", 
+    "Late_Progenitors", 
+    "Immature_B1", 
+    "Immature_B2", 
+    "Mature_B", 
+    "Mature_Non_B"
+  )
+
+MARKERS <- 
+  c(
+    'CD19', 
+    'CD20', 
+    'CD34', 
+    'CD38', 
+    'IgMi', 
+    'IgMs', 
+    'CD179a', 
+    'CD179b',
+    'CD127', 
+    'Tdt',
+    'CD45', 
+    'PLCg2', 
+    'CD22', 
+    'p4EBP1', 
+    'Ikaros', 
+    'CD79b', 
+    'pSTAT5',
+    'CD123',
+    'Ki67', 
+    'IgL kappa',
+    'IKAROS_i', 
+    'CD10', 
+    'pAkt',
+    'CD24', 
+    'CRLF2', 
+    'RAG1', 
+    'Pax5',
+    'pSyk',
+    'CD43',
+    'CD58',
+    'HIT3a',
+    'CD16',
+    'pS6',
+    'pErk',
+    'HLADR',
+    'pCreb'  
+  )
+
+overexpressed_markers <-
+  c(
+    'PLCg2', 
+    'CD22', 
+    'p4EBP1', 
+    'Ikaros', 
+    'CD79b', 
+    'pSTAT5',
+    'CD123',
+    'IKAROS_i', 
+    'pAkt',
+    'CRLF2', 
+    'Pax5',
+    'pSyk',
+    'HIT3a',
+    'pS6',
+    'pErk',
+    'pCreb'  
+  )
+
+
+#===============================================================================
+
+```
+
+
+```{r, message = FALSE, warning = FALSE}
+# read in big data 
+big_data <- 
+  big_data_path %>% 
+  read_rds()
+
+#read in data
+saucie_data <-
+  saucie_data_path %>% 
+  read_rds() 
+
+#save data as .csv for SAUCIE
+saucie_data %>% 
+  ungroup() %>% 
+  select(-file_name, -patient, -stimulation, -time) %>% 
+  transmute_all(scale) %>% 
+  write_csv(path = file.path(data_path, "saucie_data.csv"), col_names = TRUE)
+
+#read in data from saucie clustering
+saucie_output <- 
+  saucie_output_path %>% 
+  read_csv() %>% 
+  select(-X1)
+
+#read in classified data 
+classifier_output <- 
+  classifier_data_path %>% 
+  read_rds()
+```
+
+
+```{r}
+#Calculate F-measure
+match_matrix <- 
+  bind_cols(classifier_output, saucie_output) %>% 
+  transmute(
+    developmental_cluster = classified_population, 
+    saucie_cluster = as.factor(clusters)
+  ) %>% 
+  filter(saucie_cluster != -1) %>% 
+  count(developmental_cluster, saucie_cluster)
+
+developmental_totals <- 
+  classifier_output %>% 
+  select(developmental_cluster = classified_population) %>% 
+  count(developmental_cluster)
+
+saucie_totals <- 
+  saucie_output %>% 
+  dplyr::transmute(saucie_cluster = as.factor(clusters)) %>% 
+  filter(saucie_cluster != -1) %>% 
+  count(saucie_cluster)
+
+```
+
+```{r, message = FALSE, warning = FALSE}
+final_F <- 
+  match_matrix %>% 
+  group_by(developmental_cluster) %>% 
+  mutate(recall = n / sum(n)) %>% 
+  group_by(saucie_cluster) %>% 
+  mutate(precision = n / sum(n)) %>% 
+  ungroup() %>%
+  mutate(F_measure = (2 * precision * recall) / (precision + recall)) %>% 
+  group_by(developmental_cluster) %>% 
+  filter(F_measure == max(F_measure)) %>% 
+  ungroup() %>% 
+  left_join(saucie_totals) %>% 
+  rename(saucie_total = n) %>% 
+  left_join(developmental_totals) %>% 
+  rename(developmental_total = n) %>% 
+  transmute(F_measure = F_measure * developmental_total / sum(developmental_total)) %>% 
+  summarize(final_F = sum(F_measure))
+
+precision_recall_table <- 
+  match_matrix %>% 
+  group_by(developmental_cluster) %>% 
+  mutate(recall = n / sum(n)) %>% 
+  group_by(saucie_cluster) %>% 
+  mutate(precision = n / sum(n)) %>% 
+  ungroup() %>%
+  mutate(F_measure = (2 * precision * recall) / (precision + recall)) %>% 
+  group_by(developmental_cluster) %>% 
+  filter(F_measure == max(F_measure)) %>% 
+  ungroup() %>% 
+  transmute(
+    `Developmental Population` = developmental_cluster, 
+    Precision = precision, 
+    Recall = recall, 
+    `F-measure` = F_measure
+  ) %>% 
+  arrange(desc(`F-measure`))
+
+```
+
+
+## Background and project motivation
+
+In the clinical evaluation of leukemia (blood cancer), most diagnostic and prognostic tests rely on the identification and enumeration of leukemic "blasts" in the blood and bone marrow of patients. In short, blasts are immature blood cells that - due to genetic and epigenetic abnormalities - develop abberrancies in cellular maturation that cause them to become cancerous. Blast phenotypes differ widely between patients both because of individual differences in the biology of each patient's cancer and because of instrumentation differences between clinics where testing is conducted. This means that the current gold standard of diagnostic and prognostic testing for leukemia relies on pathologists manually inspecting the protein-level phenotypes of cancer patients by eye using [microscopy](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC7065280/),^1^ [flow cytometry](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC4729109/),^2^ and related methods. 
+
+Due to the labor-intensiveness of current clinical testing protocols for leukemia, the development of high-throughput, automated methods of enumerating leukemic blasts would have great clinical impact in the diagnosis and prognosis of the disease. Thus, here we are interested in using deep learning to take a step towards that goal by building an autoencoder framework capable of denoising, batch-correcting, and clustering protein-level data collected by single-cell cytometry such that individual differences in protein marker expression are preserved but instrument-to-instrument differences (due to collecting samples between multiple clinical labs) are reduced. This project leans heavily on existing implementations of a network method called [SAUCIE](https://www.nature.com/articles/s41592-019-0576-7) that was developed using non-cancer cells and that we have adapted for this project.^3^
+
+SAUCIE ("sparse autoencoder for unsupervised clustering, imputation, and embedding") is a multitasking autoencoder that "extends" the architecture of a simple autoencoder. It does so by adding several layers that are regularized in such a way that their outputs are biologically meaningful. These layers include a clustering layer that is regularized to penalize within-cluster distances between cells *and* that performs information dimension (ID) regularization (to encourage cluster sparsity); in addition, the "embedding" layer of the autoencoder (i.e. the middle layer between the encoder and the decoder) is regularized such that the pairwise distances between cells from different batches is minimized, allowing for denoising and batch correction. SAUCIE has been previously validated on single-cell data collected from the immune system, in which phenotypic differences between cell types are relatively large. However, it is yet to be shown that SAUCIE can provide meaningful results on cancer cell data, which are more generally characterized by subtle phenotypic differences within expanded cellular sublineages within a tumor. 
+
+## Current Progress
+
+So far, we have been able to apply the implementation of SAUCIE to our dataset with some success but with a great deal of room for further development. Challenges to date have included navigating SAUCIE's installation and syntax (which turned out to be nontrivial, as the implementation is relatively new and thus poorly documented to date) in order to run it locally. 
+
+## Description of the dataset
+
+In this project, I am working with data originally published in a previous paper from my lab about leukemia biology that was published in one of the 2018 issues of the biomedical journal [**Nature Medicine**](https://www.nature.com/nm/). The paper devised a method of "aligning" cancer cells with the healthy cell type to which they are most similar. Overall, their idea was that comparing cancer cell subtypes to healthy cell subtypes might help us to infer 
+how cancer cells behave or where they come from. The link to the original paper can be found [here](https://www.ncbi.nlm.nih.gov/pubmed/29505032).^4^
+
+Specifically, the dataset contains mass cytometry data from 60 patients with B-cell precursor acute lymphoblastic leukemia (BCP-ALL) and 5 healthy control patients. The data were collected on a cytof2 mass cytometer and appropriately normalized, batch-corrected, and clinically annotated prior to our analysis. The data are stored as [.fcs files](https://en.wikipedia.org/wiki/Flow_Cytometry_Standard), a file format developed by the International Society for the Advanced of Cytometry.^5^
+
+These single-cell data can be represented as an [m x n] matrix in which `m` represents the number of cells that you've measured and `n` represents the number of proteins that you've measured within each cell. Each cell was collected from one of the 60 patients enrolled in the study (thus, many thousands of cells come from each patient). A summary table of how many cells came from each sample is provided in the Appendix (note that there are sometimes several samples that correspond to a single patient as well!).
+
+For this report, we worked with a cleaned version of these data to eliminate some of the frustration of working with samples that vary significantly in size and quality (often, when there are relatively few cells in a sample, it means that the sample was not very "viable" when it was collected, which means that many cells were dead or dying. Low-viability samples are often best to throw away entirely, as even the cells that lived were probably on their way to cell death). Specifically, we limited the dataset to solely diagnostic specimens taken from the blood or bone marrow, and we sampled 10,000 cells from each unique patient. All patients that did not have at least 10,000 cells collected in their sample were removed from the analysis.  
+
+Summary statistics for the dataset are provided here: 
+
+```{r, echo = FALSE, include = TRUE}
+big_data %>% 
+  ungroup() %>% 
+  filter(stimulation == "basal") %>% 
+  select(-file_name, -stimulation, -time) %>% 
+  summary()
+```
+
+Most important to note here is that, as is common with mass cytometry data (particularly in cancer), the distributions are highly skewed such that there are often huge(!) outliers in the positive direction due to instrumentation failure. These values are not biologically informative, so filtering out all measurements that are above the 95th percentile in a given channel was performed. 
+
+
+## Results and Discusssion
+
+Because SAUCIE is an unsupervised learning algorithm, we evaluated its performance by comparing it to the "gold-standard" supervised clustering algorithm that the authors applied to the same data in the original paper for which the data were collected. Specifically, we compared SAUCIE's performance to the original authors' algorithm using a version of the F1-measure of classification accuracy commonly used to compare single-cell clustering methods to one another.^6^ In short, the F1-measure is the harmonic mean of precision and recall for classification compared to a gold-standard method. SAUCIE performed with an F1-measure overall of `r final_F %>% round(1)`, making it about average as far as clustering algorithms applied to mass cytometry datasets are concerned^6^. 
+
+In addition to this overall metric, subpopulation-specific performance criteria are reported here: 
+
+```{r}
+precision_recall_table %>% 
+  knitr::kable()
+```
+
+From these results, we can see that SAUCIE's best performance is on the population of cells called "Mature Non-B" cells, which also happens to be the largest (and most diverse) cell population in our dataset. Thus, it may be possible that SAUCIE is learning to identify cell populations better than others and more even sampling across subpopulations during training might increase its performance compared to the gold-standard we're using here. 
+
+## Future directions
+
+There are three concrete further directions that I want to carry out from what has been presented here. 
+
+* First, I want to run SAUCIE on the entire dataset (rather than just 10,000 cells per patient) now that I have some proof-of-principle that it works. If this does not improve the F-measure significantly, I will implement a biased sampling of the training set with adversarial examples (i.e. smaller cell populations on which SAUCIE is currently performing poorly). 
+
+* Second, I want to perform a more rigorous random search over the hyperparameters of the SAUCIE network to find more optimal values for its regularization constants. Here, I informally tested several values until I got a single-digit number of clusters (to make more comparable to the gold-standard) but a more rigorous approach is needed. 
+
+* Third, I am interested in using the reconstruction of the denoised features and the clustering information yielded by SAUCIE to see if adding an additional layer or two to the network will allow it to perform a supervised learning task (i.e. predicting which cells come from a patient who will relapse and patients who will not; successfully identifying cells that are cancerous compared to healthy cells, identifying cancer cells that come from an early timepoint of disease compared to a late timepoint of disease, etc.). In order to do this, I am hoping to add a convolutional layer to the end of the network that will automatically detect cellular subsets (even within SAUCIE-identified clusters) associated with the disease outcome. This approach has been used in one paper detailing an algorithm called "Cellular Convolutional Neural Network"^7^ and I am curious how it might combine with SAUCIE.
+
+## References
+
+1. Abou Dalle I, Jabbour E, Short NJ. Evaluation and management of measurable residual disease in acute lymphoblastic leukemia. Ther Adv Hematol. 2020;11:2040620720910023. Published 2020 Mar 6. doi:10.1177/2040620720910023
+
+2. Wang XM. Advances and issues in flow cytometric detection of immunophenotypic changes and genomic rearrangements in acute pediatric leukemia. Transl Pediatr. 2014;3(2):149‐155. doi:10.3978/j.issn.2224-4336.2014.03.06
+
+3. Amodio, M., van Dijk, D., Srinivasan, K. et al. Exploring single-cell data with deep multitasking neural networks. Nat Methods 16, 1139–1145 (2019). https://doi.org/10.1038/s41592-019-0576-7
+
+4. Good Z, Sarno J, Jager A, et al. Single-cell developmental classification of B cell precursor acute lymphoblastic leukemia at diagnosis reveals predictors of relapse. Nat Med. 2018;24(4):474‐483. doi:10.1038/nm.4505
+
+5. https://en.wikipedia.org/wiki/Flow_Cytometry_Standard
+
+6. Aghaeepour, N., Finak, G., Hoos, H. et al. Critical assessment of automated flow cytometry data analysis techniques. Nat Methods 10, 228–238 (2013). https://doi.org/10.1038/nmeth.2365
+
+7. Arvaniti, E., Claassen, M. Sensitive detection of rare disease-associated cell subsets via representation learning. Nat Commun 8, 14825 (2017). https://doi.org/10.1038/ncomms14825
+
+# Appendix
+
+## Summary table of patient cell counts
+
+```{r}
+big_data %>% 
+  ungroup() %>% 
+  count(patient, name = "Number of cells") %>% 
+  knitr::kable()
+```
+

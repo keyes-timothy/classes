@@ -1,0 +1,317 @@
+---
+title: "Milestone 2"
+author: "Timothy Keyes"
+date: "`r Sys.Date()`"
+output: pdf_document
+urlcolor: blue
+
+  
+---
+
+```{r setup, include=FALSE, warning = FALSE, message = FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+```{r message=FALSE, warning=FALSE}
+# Libraries
+library(tidyverse)
+library(rlang)
+
+# Parameters
+
+data_path <- here::here("c01-own", "data", "classified_DDPR_data.rds")
+cluster_column <- "classified_population"
+plot_out_path <- here::here("c01-own", "eda", "abundances")
+
+metadata <- c("patient")
+
+CLASSIFIER_POPULATIONS <-
+  c(
+    "HSC", 
+    "Progenitor_1", 
+    "Progenitor_2", 
+    "Progenitor_3", 
+    "Pre_Pro_B", 
+    "Pro_B1", 
+    "Pro_B2", 
+    "Pre_B1", 
+    "Pre_B2", 
+    "Early_Progenitors", 
+    "Late_Progenitors", 
+    "Immature_B1", 
+    "Immature_B2", 
+    "Mature_B", 
+    "Mature_Non_B"
+  )
+
+MARKERS <- 
+  c(
+    'CD19', 
+    'CD20', 
+    'CD34', 
+    'CD38', 
+    'IgMi', 
+    'IgMs', 
+    'CD179a', 
+    'CD179b',
+    'CD127', 
+    'Tdt',
+    'CD45', 
+    'PLCg2', 
+    'CD22', 
+    'p4EBP1', 
+    'Ikaros', 
+    'CD79b', 
+    'pSTAT5',
+    'CD123',
+    'Ki67', 
+    'IgL kappa',
+    'IKAROS_i', 
+    'CD10', 
+    'pAkt',
+    'CD24', 
+    'CRLF2', 
+    'RAG1', 
+    'Pax5',
+    'pSyk',
+    'CD43',
+    'CD58',
+    'HIT3a',
+    'CD16',
+    'pS6',
+    'pErk',
+    'HLADR',
+    'pCreb'  
+  )
+
+paper_markers <- 
+  c(
+    "CD45", 
+    "CD10", 
+    "CD58"
+  )
+
+overexpressed_markers <-
+  c(
+    'PLCg2', 
+    'CD22', 
+    'p4EBP1', 
+    'Ikaros', 
+    'CD79b', 
+    'pSTAT5',
+    'CD123',
+    'IKAROS_i', 
+    'pAkt',
+    'CRLF2', 
+    'Pax5',
+    'pSyk',
+    'HIT3a',
+    'pS6',
+    'pErk',
+    'pCreb'  
+  )
+
+
+#===============================================================================
+
+```
+
+## Background
+
+In this report, I am working with data originally published in a previous paper from my lab about leukemia biology that was published in one of the 2018 issues of the biomedical journal [**Nature Medicine**](https://www.nature.com/nm/). The paper devised a method of "aligning" cancer cells with the healthy cell type to which they are most similar. Overall, their idea was that comparing cancer cell subtypes to healthy cell subtypes might help us to infer 
+how cancer cells behave or where they come from. The link to the original paper can be found [here](https://www.ncbi.nlm.nih.gov/pubmed/29505032). 
+
+So far, I have been able to access the raw data from their original study--which can be found on [the lab's GitHub page](https://github.com/kara-davis-lab/DDPR/releases)--and read it into both R and Python for preprocessing and some initial exploratory data analyses. So far, I have been able to recreate some of the figures from the original paper just to give myself a "sanity check" that what I'm looking at is relatively similar to what the authors were looking at. 
+
+## Description of the dataset
+
+Specifically, our dataset contains mass cytometry data from 60 patients with B-cell precursor acute lymphoblastic leukemia (BCP-ALL) and 5 healthy control patients. The data were collected on a cytof2 mass cytometer and appropriately normalized, batch-corrected, and clinically annotated prior to our analysis. The data are stored as [.fcs files](https://en.wikipedia.org/wiki/Flow_Cytometry_Standard), a file format developed by the International Society for the Advanced of Cytometry. 
+
+We report some basic information about the data we've obtained: 
+
+* Number of cells collected in each sample in total
+* Number of cells within
+* Some basic observations about the characteristics of the main cell populations in each sample
+
+### Number of cells
+
+In most single-cell experiments, it is customary to count how many cells you were able to analyze for each patient enrolled in your study as a general measure of data quality. This is because it is easy to lose cells during the data collection process, and it is generally not advisable to analyze samples with fewer than several thousand cells. Here, we make a plot counting the number of cells collected for each patient in the dataset: 
+
+```{r}
+#read in data
+clustered_data <- 
+  data_path %>% 
+  read_rds() %>% 
+  unnest(cols = c(classifier_markers, remaining_markers, classification_data))
+```
+
+```{r}
+
+#count cells for each patient
+clustered_data %>% 
+  ungroup() %>% 
+  count(patient, name = "total_cells") %>% 
+  mutate(
+    patient = fct_reorder(patient, total_cells),
+    condition = if_else(str_detect(patient, "Healthy"), "Healthy", "Cancer")
+  ) %>% 
+  ggplot(aes(x = patient, y = total_cells, fill = condition)) + 
+  geom_col() + 
+  geom_hline(yintercept = 1000, color = "black", linetype = "dotted") + 
+  scale_y_log10(
+    breaks = map_dbl(1:7, ~ 10^.), 
+    minor_breaks = NULL, 
+    labels = scales::label_number(big.mark = ",")
+  ) + 
+  coord_flip() + 
+  theme(axis.text = element_text(size = 4)) + 
+  labs(
+    x = NULL, 
+    y = "Total number of cells collected (log scale)", 
+    fill = NULL, 
+    caption = "Source: Good et al., 2018, Nature Medicine"
+  )
+```
+
+Thus, we can see that none of our samples have below 1,000 cells (and thus none need to be thrown away using this rule of thumb), but we also see that the number of cells collected between samples was NOT equal at all. Some samples had way more cells collected than others. In the original paper, the predictive model of relapse that the authors used incorporated features representing the measures of central tendency (medians, means, and percent "positive" cells over a certain threshold) within different cell populations within each of these samples. This is important because, given that the number of cells actually measured was very different across patients, the interpretation of these measures of central tendency shouldn't necessarily be the same (does the mean of a cell population with several thousand cells mean the same thing as the mean of a cell population with several hundred thousand cells?). 
+
+Importantly, there are not the same number of samples that come from healthy people and leukemia patients in the dataset at all...with only 5 healthy samples and 60 leukemia samples. The dataset's leukemia samples are not all the same - 17 of the patients from which the samples were collected ended up developing relapsed disease and 43 of them did not. 
+
+While these is not a particularly larger numnber of patients, there are many, many cells in the dataset in total and so I am interested in building a model that operates on the single-cell level (predicting if a cell is associated with relapse or not). 
+
+```{r}
+clustered_data %>% 
+  nrow() %>% 
+  tibble(`Number of total cells:` = .) %>% 
+  knitr::kable()
+```
+
+
+## Abundance analysis of cancer cell subpopulations 
+
+In the original paper, the authors' first major finding was that certain subpopulations of cells are "expanded"--or present in higher proportions--in cancer cells relative to healthy cells of the same lineage. This result was summarized in Figure 3a of the manuscript: 
+
+
+In this figure, they found that several populations in the middle of the lineage's development were expanded relative to healthies. I was able to run the public implementation of the single-cell classifier (which was a custom in-house algorithm that they developed similar to linear discriminant analysis) that sorted cancer cells into different cell subtypes after the classifier was trained on healthy cells. The idea behind this classifier was to identify healthy-like cell subpopulations in cancer by applying an algorithm that was trained on healthy cells to cancer cells. On the original healthy samples, the classifier that they developed was about to sort cells into the "correct" (after gold standard manual identification by a biologist) subtype in nearly 90% of cases. On cancer cells, it is not possible to compute the accuracy because no real gold-standard exists. 
+
+The results from this classifier, at least compared to the original authors' reported results, were as follows: 
+
+```{r}
+#wrangle data 
+sample_size <- 
+  clustered_data %>% 
+  group_by(
+    condition = 
+      if_else(str_detect(patient, pattern = "Healthy"), "healthy", "cancer")
+  ) %>% 
+  summarize(group_size = n_distinct(patient))
+
+abundances <- 
+  clustered_data %>% 
+  group_by_at(vars(one_of(metadata, cluster_column))) %>% 
+  summarize(cell_count = n()) %>% 
+  mutate(
+    cell_prop = cell_count / sum(cell_count), 
+    condition = 
+      if_else(str_detect(patient, pattern = "Healthy"), "healthy", "cancer")
+  ) %>% 
+  left_join(sample_size, by = "condition") %>% 
+  group_by(condition, classified_population) %>% 
+  summarize(
+    group_size = mean(group_size), 
+    sem = sd(cell_prop) / sqrt(group_size), 
+    cell_prop = mean(cell_prop), 
+  )
+
+#make plot 
+
+abundances %>% 
+  mutate(
+    classified_population = 
+      factor(classified_population, levels = CLASSIFIER_POPULATIONS)
+  ) %>% 
+  ggplot(aes(x = classified_population, y = cell_prop, color = condition)) + 
+  geom_line(aes(group = condition)) + 
+  geom_crossbar(
+    aes(ymin = cell_prop - sem, ymax = cell_prop + sem, fill = condition), 
+    alpha = 0.3, 
+    color = NA
+  ) + 
+  geom_point(shape = 21, fill = "white", size = 3) + 
+  annotate(
+    geom = "tile", 
+    x = 7.5, 
+    y = 0.04, 
+    width = 6, 
+    height = 0.12, 
+    color = "light blue",
+    fill = NA, 
+    size = 0.8
+  ) + 
+  geom_text(
+    aes(x = classified_population, y = cell_prop + 0.1), 
+    data = 
+      abundances %>% 
+      dplyr::filter(
+        classified_population %in% c("Pro_B2", "Pre_B1"), 
+        condition == "cancer"
+      ), 
+    label = "\n", 
+    color = "black", 
+    size = 6
+  ) + 
+  scale_x_discrete(
+    labels = 
+      CLASSIFIER_POPULATIONS %>% 
+      str_replace_all(pattern = "_", replacement = " ")
+  ) + 
+  scale_y_continuous(
+    breaks = scales::breaks_width(width = 0.1), 
+    labels = scales::label_percent(accuracy = 1)
+  ) + 
+  scale_color_discrete(
+    breaks = c("healthy", "cancer"), 
+    labels = c("Healthy", "Patients")
+  ) + 
+  scale_fill_discrete(
+    breaks = c("healthy", "cancer"), 
+    labels = c("Healthy", "Patients")
+  ) + 
+  theme_light() + 
+  theme(
+    axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5), 
+    legend.position = c(0.065, 0.93), 
+    legend.background = element_blank()
+  ) + 
+  labs(
+    x = "Cellular Maturity ->",
+    y = "Cells in population (%)", 
+    fill = NULL, 
+    color = NULL
+  )
+
+```
+
+ 
+
+From the above plot, we can see that our results are somewhat similar to the original results of the _Nature Medicine_ paper, with some minor differences. 
+
+* Using their classifier algorithm, there are in fact several expanded "immature" cell populations in the cancer cells relative to the healthy cells. However, the boxed region indicates the cell populations that were noted to be expanded in the original paper (with the two demarked by arrows being the most important, or the most indicative of relapse in the model that the authors ultimately built). While we do see an expansion in the cancer cells relative to the healthy cells in the `Pro_B1` and `Pre_B2` populations as in the original paper, it does not seem to be as large of an expansion as the original authors found. In addition, most of the other populations in this region of the plot were not expanded despite the authors' original observations. 
+
+* Instead, we see that we have progenitor expansion earlier in the developmental "phase" of the cells, with expansions in the `HSC` and `Progenitor 1-3` populations (which were not observed in the original paper).
+
+* In addition, we find a smaller spike in `Late Progenitors` in the healthy patients relative to the cancer patients than was found in the original paper. 
+
+There are several potential explanations for why our findings may differ from those in the original paper. First, the original paper did not include references to the healthy data used to perform the original classification (i.e. the "training set" for the developmental classifier). Thus, our classification was performed to a different dataset of healthy data collected by the same lab group (personal correspondence), but on a different machine. So, it is possible that there are some training set-test set differences in our classification that would lead to slight differences. 
+
+Thus, we were able to reproduce some of the main findings of the original paper while also being able to appreciate some of the difficulties of the reproducibility crisis in scientific research (particularly in the case where methdolody is not rigorously documented and provided to the public.)
+
+
+## Future directions
+
+After some initial exploratory data analysis of the available data, I have gotten a bit lost of where to go next. I originally proposed using an autoencoder called [SAUCIE](https://github.com/KrishnaswamyLab/SAUCIE/blob/master/SAUCIE.py), a multitasking network previously developed to batch normalize, denoise, and cluster single-cell data collected from human patients in the context of viral infection. I am still interested in potentially applying this network to the cancer data set to see if it identifies similar cell populations as the single-cell classifier that the **Nature Medicine** authors did, but after taking a closer look at the SAUCIE paper I am worried that they use more advanced methods than we have been able to discuss in our class (and there are several parts that I don't understand fully). 
+
+I've also become potentially interested in potentially using a convolutional neural network approach that has been applied to similar data as mine to predict clinical outcomes on the single-cell level (which could be useful for this data, seeing as there is such a limited number of patients but such a larger numnber of cells). This approach is called [CellCNN](https://www.nature.com/articles/ncomms14825) and I am trying to decide if I am going to pivot my project to focus more on adapting this methodology for my application. 
+
+## References
+
