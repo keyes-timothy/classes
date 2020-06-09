@@ -57,6 +57,46 @@ CLASSIFIER_MARKERS <-
     'CD127'
   )
 
+MARKERS <- 
+  c(
+    'CD19', 
+    'CD20', 
+    'CD34', 
+    'CD38', 
+    'IgMi', 
+    'IgMs', 
+    'CD179a', 
+    'CD179b',
+    'CD127', 
+    'Tdt',
+    'CD45', 
+    'PLCg2', 
+    'CD22', 
+    'p4EBP1', 
+    'Ikaros', 
+    'CD79b', 
+    'pSTAT5',
+    'CD123',
+    'Ki67', 
+    'IgL kappa',
+    'IKAROS_i', 
+    'CD10', 
+    'pAkt',
+    'CD24', 
+    'CRLF2', 
+    'RAG1', 
+    'Pax5',
+    'pSyk',
+    'CD43',
+    'CD58',
+    'HIT3a',
+    'CD16',
+    'pS6',
+    'pErk',
+    'HLADR',
+    'pCreb'  
+  )
+
 #===============================================================================
 source(
   file = 
@@ -82,11 +122,11 @@ my_classifier <-
 
 my_result <- 
   apply_classifier(
-    classifier_fit = my_classifier, 
+    classifier_fit = my_classifier,
     nCores = 10, 
     cancer_path = cancer_path, 
     metadata = "file_name"
-  ) %>% 
+  ) %>%
   unnest(cols = c(classifier_markers, remaining_markers, classification_data))
 
 write_rds(x = my_result, path = file.path(out_path, "classifier_saucie_result.rds"))

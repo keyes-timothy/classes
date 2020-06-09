@@ -86,6 +86,9 @@ write_rds(
   x = my_data, path = file.path(out_data, "DDPR_data.rds"), compress =  "gz"
 )
 
+
+
+
 #only non-relapse data will be saved, and only samples with >10K cells will be saved
 # in addition, all cells greater than the 95th% on any marker will be thrown away
 sampled_data <- 
@@ -96,8 +99,8 @@ sampled_data <-
     all_vars(. < quantile(., 0.95))
   ) %>% 
   group_by(patient) %>% 
-  dplyr::filter(n() >= 10000) %>% 
-  sample_n(size = 10000, replace = FALSE)
+  dplyr::filter(n() >= 10000) #%>% 
+  #sample_n(size = 10000, replace = FALSE)
 
 write_rds(
   x = sampled_data, path = file.path(out_data, "sampled_DDPR_data.rds"), compress =  "gz"

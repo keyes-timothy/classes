@@ -1,5 +1,5 @@
 ---
-title: "Milestone 2 - Using deep autoencoder feature embeddings to explore single-cell phenotypes in pediatric cancer"
+title: "Final Report - Using deep autoencoder feature embeddings to explore single-cell phenotypes in pediatric cancer"
 author: "Timothy Keyes"
 date: "`r Sys.Date()`"
 output: pdf_document
