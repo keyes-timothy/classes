@@ -1,0 +1,148 @@
+---
+title: "Untitled"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Setup
+
+```{r}
+# libraries
+library(diffcyt)
+library(tidyverse)
+library(tidymodels)
+library(lme4)
+
+# paths 
+data_path <- 
+  file.path("~", "GitHub", "classes", "BIOMEDIN_212", "data-raw", "cell_table.csv")
+
+metadata_path <- 
+    file.path("~", "GitHub", "classes", "BIOMEDIN_212", "data-raw", "fov_labels.csv")
+
+surfactant_path <- 
+  file.path("~", "GitHub", "classes", "BIOMEDIN_212", "data-raw", "surfactant_masks")
+
+# globals 
+
+
+
+```
+
+# Read in data
+
+```{r}
+# metadata 
+metadata <- 
+  metadata_path %>% 
+  read_csv() %>% 
+  rename(fov_id = point) %>% 
+  janitor::clean_names()
+
+head(metadata)
+
+# mibi data
+mibi_data <- 
+  data_path %>% 
+  read_csv() %>% 
+  rename(
+    fov_id = point, 
+    cell_id = label, 
+    cluster_id = pixelfreq_hclust_cap,
+    cluster_name = name, 
+    centroid_x = `centroid-0`, 
+    centroid_y = `centroid-1`
+  ) %>% 
+  janitor::clean_names()
+
+head(mibi_data)
+
+# surfactant data
+surf_data <- 
+  tibble(
+    filenames = 
+      surfactant_path %>% 
+      list.files(), 
+    paths = 
+      surfactant_path %>% 
+      list.files(full.names = TRUE), 
+    data = map(.x = paths, .f = pap_read_tif)
+  )
+
+surf_data <- 
+  surf_data %>% 
+  unnest(cols = data) %>% 
+  transmute(
+    fov_id = str_extract(filenames, pattern = "[:digit:]+"), 
+    x, 
+    y, 
+    values
+  )
+
+head(surf_data)
+
+```
+
+
+# Pre-process data
+
+```{r}
+mibi_data %>% 
+  left_join(metadata) %>% 
+  count(fov_id)
+
+surf_data %>% 
+  count(fov_id)
+```
+
+
+# Differential Abundance Analysis
+
+## Data structures
+
+```{r}
+
+```
+
+
+## Statistical testing
+
+```{r}
+
+```
+
+
+## Visualization
+
+```{r}
+
+```
+
+
+
+# Differential Expression Analysis
+
+## Data structures
+
+```{r}
+
+```
+
+
+## Statistical testing
+
+```{r}
+
+```
+
+
+## Visualization
+
+```{r}
+
+```
+
+
