@@ -1,8 +1,8 @@
 ---
 title: "Aim 1 Differential Discovery Analysis"
 output: 
-  github_document: default
   pdf_document: default
+  github_document: default
 urlcolor: blue
 ---
 
@@ -115,13 +115,13 @@ surf_data <-
 
 # Pre-process data
 
-First, I'll just join the metadata into the mibi_data cell-level expression matrix.
-
 ```{r}
+# join the mibi single-cell data with the FOV metadata
 mibi_data <- 
   mibi_data %>% 
   left_join(metadata)
 
+# count how many cells there are in each FOV type
 mibi_data %>% 
   count(category)
 ```
@@ -277,7 +277,7 @@ $$
 In the equation above, we use the following definitions:
 
 -   $p_{ij}$: The proportion of cells in a given cluster in patient *i* and FOV *j*
--   $\alpha_i^{(p)}$: A random intercept for each patient *i* in which $\alpha_i^{(p)}$ ~ $N(0, \sigma_p)$, where $\sigma_p$ is estimated during model fitting.
+-   $\alpha_i$: A random intercept for each patient *i* in which $\alpha_i^{(p)}$ ~ $N(0, \sigma_p)$, where $\sigma_p$ is estimated during model fitting.
 -   $X_{j}$: an indicator variable representing whether or not an FOV j was taken from an SJIA-PAP patient (1 if yes, 0 otherwise). Depending on which comparisons we're making, what $X_j$ stands for can change (but it always represents which `outcome` FOV j has been annotated with.
 -   All $\beta$'s are linear model parameters optimized during model fitting.
 
@@ -312,12 +312,6 @@ pap_daa$da_results %>%
 
 From these results, we can see that, when taking indivual random-effects into account, there are no statistically significant differentially abundance clusters between PAP and non-PAP samples (at least at the level of power we have available to us in this study). 
 
-```{r, eval = FALSE}
-overall_daa$da_results_limma %>% 
-  topTable(all = TRUE) %>% 
-  as_tibble()
-```
-
 ## SJIA-PAP vs. Controls
 
 The second comparison we can run is between SJIA-PAP samples and control samples. 
@@ -347,12 +341,6 @@ daa_sjia_pap_vs_controls$da_results %>%
 
 In these results, we can see that neutrophils are differentially abundant in SJIA-PAP and control samples. 
 
-```{r, eval = FALSE}
-daa_sjia_pap_vs_controls$da_results_limma %>% 
-  topTable(all = TRUE) %>% 
-  as_tibble()
-```
-
 ## SJIA-PAP vs. nonSJIA-PAP
 
 The third comparison we can run is between SJIA-PAP and nonSJIA-PAP samples. 
@@ -380,11 +368,6 @@ daa_sjia_pap_vs_nonsjia_pap$da_results %>%
 
 And once again we can see that there are no differentially abundant clusters between these sample types. 
 
-```{r, eval = FALSE}
-daa_sjia_pap_vs_nonsjia_pap$da_results_limma %>% 
-  topTable(all = TRUE) %>% 
-  as_tibble()
-```
 
 ## nonSJIA-PAP vs. Controls
 
@@ -414,11 +397,6 @@ daa_control_vs_nonsjia_pap$da_results %>%
 
 And in this case we can see that there are several cell subtypes that are differentially abundant (pneumocytes, monocytes, endothelial cells, and iNOS+ Macrophages). 
 
-```{r, eval = FALSE}
-daa_control_vs_nonsjia_pap$da_results_limma %>% 
-  topTable(all = TRUE) %>% 
-  as_tibble()
-```
 
 
 ## Visualization
@@ -527,15 +505,6 @@ paired_daa_results %>%
 ```
 
 
-
-```{r, eval = FALSE}
-paired_daa_results %>% 
-  pluck("da_results_limma") %>% 
-  topTable(all = TRUE) %>% 
-  as_tibble() %>% 
-  mutate(significant = if_else(p_adj < 0.05, "*", "")) %>% 
-  arrange(p_adj)
-```
 
 From these results, we can see that there are several immune cell subtypes that, when using a paired design, we find are enriched in parts of the SJIA-PAP lung that actually show histopathological signs of disease compared to paired parts of the SJIA-PAP lung that do not show histopathological signs of disease.
 
@@ -885,26 +854,6 @@ paired_dea_results %>%
 
 ```
 
-
-
-```{eval = FALSE}
-paired_dea_results_2 <- 
-  testDS_LMM(
-    d_counts = calcCounts(paired_dea_results$data_diff), 
-    d_medians = calcMedians(paired_dea_results$data_diff), 
-    formula = paired_dea_results$my_formula, 
-    contrast = paired_dea_results$my_contrast, 
-    min_cells = 10, 
-    min_samples = 5, 
-    markers_to_test = rep(TRUE, nrow(paired_dea_results$marker_info))
-  )
-
-paired_dea_results_2 %>% 
-  topTable(all = TRUE) %>% 
-  as_tibble() %>% 
-  mutate(significant = if_else(p_adj < 0.10, "*", "")) %>% 
-  arrange(p_adj)
-```
 
 
 `r pagebreak()`
