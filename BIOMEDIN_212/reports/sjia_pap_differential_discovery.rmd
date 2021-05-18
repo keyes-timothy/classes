@@ -1,10 +1,13 @@
 ---
-title: "Untitled"
-output: github_document
+title: "Aim 1 Differential Discovery Analysis"
+output: 
+  github_document: default
+  pdf_document: default
+urlcolor: blue
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(echo = TRUE, dpi = 300, warning = FALSE, message = FALSE)
 ```
 
 # Setup
@@ -16,21 +19,50 @@ library(tidyverse)
 library(tidymodels)
 library(lme4)
 
+# source utils
+source('~/GitHub/classes/BIOMEDIN_212/r_scripts/pap_utils.R', echo = FALSE)
+
 # paths 
 data_path <- 
   file.path("~", "GitHub", "classes", "BIOMEDIN_212", "data-raw", "cell_table.csv")
 
 metadata_path <- 
-    file.path("~", "GitHub", "classes", "BIOMEDIN_212", "data-raw", "fov_labels.csv")
+  file.path(
+    "~", "GitHub", "classes", 
+    "BIOMEDIN_212", "data-raw", "fov_labels.csv"
+  )
 
 surfactant_path <- 
-  file.path("~", "GitHub", "classes", "BIOMEDIN_212", "data-raw", "surfactant_masks")
+  file.path(
+    "~", "GitHub", "classes", 
+    "BIOMEDIN_212", "data-raw", "surfactant_masks"
+  )
 
-# globals 
+# globals
+healthy_fovs_in_pap_patients <- 
+  c(9, 15, 20, 29, 40)
 
-
-
+functional_markers <- 
+   c(
+     "cd11c", "cd123", "cd14",
+     "cd16", "cd163", "cd20", 
+     "cd206", "cd209", "cd3", 
+     "cd31", "cd4", "cd45", 
+     "cd45ro", "cd57", "cd68", 
+     "cd8", "calprotectin", 
+     "epox", "foxp3", 
+     "grz_b", "h3k27me3", "h3k9ac", 
+     "hh3", "hla_dr", "ho_1", 
+     "ido", "if_ng", "ki67", 
+     "lag3", "mmp9", 
+     "na_kat_pase", "pd1", "pan_ck", 
+     "sma", "si", "tim3",
+     "tryptase", "vim", 
+     "i_nos", "p_s6"
+   )
 ```
+
+`r pagebreak()`
 
 # Read in data
 
@@ -41,8 +73,6 @@ metadata <-
   read_csv() %>% 
   rename(fov_id = point) %>% 
   janitor::clean_names()
-
-head(metadata)
 
 # mibi data
 mibi_data <- 
@@ -57,8 +87,6 @@ mibi_data <-
     centroid_y = `centroid-1`
   ) %>% 
   janitor::clean_names()
-
-head(mibi_data)
 
 # surfactant data
 surf_data <- 
@@ -81,68 +109,807 @@ surf_data <-
     y, 
     values
   )
-
-head(surf_data)
-
 ```
 
+`r pagebreak()`
 
 # Pre-process data
 
+First, I'll just join the metadata into the mibi_data cell-level expression matrix.
+
+```{r}
+mibi_data <- 
+  mibi_data %>% 
+  left_join(metadata)
+
+mibi_data %>% 
+  count(category)
+```
+
+Because of our limited sample size, we more or less have to combine the "Normal" and "Pneumonia" category FOVs into a single category ("Control"). However, we should acknowledge that these two controls are not created equal - in fact, if we perform a simple t-test between the Pneumonia and Normal patient FOVs' proportion of each our immune cell clusters, we can see that there are significant differences (at the level of p = 0.05) even after Benjamini-Hochberg adjustment.
+
+```{r}
+cancer_pneumonia_counts <- 
+  mibi_data %>% 
+  filter(category %in% c("Pneumonia", "Normal")) %>% 
+  mutate(cluster_name = as.factor(cluster_name)) %>% 
+  count(patient_id, fov_id, category, cluster_name, .drop = FALSE) %>% 
+  group_by(fov_id) %>% 
+  mutate(prop = n / sum(n))
+
+t_tests <- 
+  cancer_pneumonia_counts %>% 
+  group_by(cluster_name) %>% 
+  nest() %>% 
+  mutate(
+    p_value =
+      map_dbl(
+        .x = data, 
+        .f = ~ 
+          t.test(
+            x = 
+              .x %>% 
+              dplyr::filter(patient_id == 13) %>% 
+              pull(prop), 
+            y = 
+              .x %>% 
+              dplyr::filter(patient_id == 14) %>% 
+              pull(prop)
+          ) %>% 
+          tidy() %>% 
+          pull(p.value)
+      ) %>% 
+      p.adjust(method = "BH")
+  )
+
+t_tests %>% 
+  select(-data) %>% 
+  arrange(p_value) %>% 
+  mutate(significant = if_else(p_value < 0.05, "*", "")) %>% 
+  knitr::kable()
+```
+
+```{r}
+cluster_order <- 
+  t_tests %>% 
+  arrange(p_value) %>% 
+  pull(cluster_name) %>% 
+  as.character()
+
+sig_clusters <- 
+  t_tests %>% 
+  filter(p_value < 0.05) %>% 
+  pull(cluster_name) %>% 
+  as.character()
+
+cancer_pneumonia_counts %>% 
+  mutate(cluster_name = factor(cluster_name, levels = cluster_order)) %>% 
+  filter(cluster_name %in% sig_clusters) %>% 
+  ggplot(aes(y = prop, x = category, fill = category)) + 
+  geom_violin() + 
+  geom_jitter(shape = 21, width = 0.1) + 
+  facet_wrap(facets = vars(cluster_name), scales = "free") + 
+  labs(
+    subtitle = "Differentially abundant clusters in our 2 control samples",
+    x = NULL, 
+    y = "Proportion of cells in a FOV in a cluster", 
+    fill = NULL, 
+    caption = "Each point represents an FOV;\nall means are significantly different at p = 0.05"
+  )
+
+```
+
+Keeping this in mind, we proceed with annotating the `outcome` variable such that the pneumonia sample and cancer sample are treated equally as "controls" (we would be relatively underpowered otherwise in later comparisons, although this lumping is sub-optimal). 
+
+```{r}
+mibi_data <- 
+  mibi_data %>% 
+  mutate(
+    outcome = 
+      if_else(category %in% c("Normal", "Pneumonia"), "Control", category)
+  )
+```
+
+`r pagebreak()`
+
+# Basic data summary
+
+## Number of unique FOVs in each condition
+
 ```{r}
 mibi_data %>% 
-  left_join(metadata) %>% 
-  count(fov_id)
+  distinct(outcome, fov_id) %>% 
+  count(outcome, name = "num_fovs") %>% 
+  arrange(-num_fovs)
+```
 
-surf_data %>% 
-  count(fov_id)
+## Number of unique patients in each condition
+
+```{r}
+mibi_data %>% 
+  distinct(outcome, patient_id) %>% 
+  count(outcome, name = "num_patients") %>% 
+  arrange(-num_patients)
+```
+
+## Number of unique cells in each condition
+
+```{r}
+mibi_data %>% 
+  count(outcome, name = "num_cells") %>% 
+  arrange(-num_cells)
+```
+
+## Number of cells for each patient 
+
+```{r}
+mibi_data %>% 
+  count(patient_id, name = "num_cells") %>% 
+  arrange(-num_cells)
 ```
 
 
-# Differential Abundance Analysis
-
-## Data structures
+## Number of cells in each FOV
 
 ```{r}
-
+mibi_data %>% 
+  count(fov_id, name = "num_cells") %>% 
+  arrange(-num_cells)
 ```
 
 
-## Statistical testing
+`r pagebreak()`
+
+# Differential Abundance Analysis - between patients
+
+In Aim 1, we proposed a differential abundance analysis of different immune cell subtypes (represented by the column `cluster_name` in `mibi_data`) across different types of MIBI images. The first of these analyses is to compare the abundance of each immune cell subtype between independent patients, each of which has either SJIA-PAP, PAP caused by something other than SJIA (nonSJIA-PAP), pneumonia, or lung cancer (which we code as "Normal" in `mibi_data`). We combine the last two conditions into the "control" category because neither of them have PAP, so they make as much sense as any sample we have access to to form our basis of comparison. 
+
+To perform our differential abundance analysis, we use the statistical framework proposed in the [{{diffcyt}}](https://www.nature.com/articles/s42003-019-0415-5) framework. 
+
+Specifically, we use generalized linear mixed models (GLMMs) to test for differences in cluster abundance and cluster marker expression. The benefit of using mixed-models in this context is that, unlike more traditional differential abundance/expression testing tools commonly applied to cytometry data like [CITRUS](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC4084463/), GLMMs can account for complex experimental designs such as paired or block designs with known covariates representing batch effects or individual-to-individual variation. In the case of the present study, using random effects to model the variance in cluster abundance and marker expression that arises from random variation between individual patients (from whom we draw multiple FOVs), we can more reliably detect differences attributable solely to the effect of the `outcome` variable.
+
+To do this, we can use the `{diffcyt}` R package to test for differential abundance of clusters across different levels of `outcome` using binomial regression. For each cluster, we can fit a binomial regression model in which we model the log-odds (and thus indirectly the proportion of cells in a given cluster) of each cluster in a given patient *i* and a given FOV *j* $p_{ij}$ according to the following equation:
+
+$$
+logit(p_{ij}) = log(\frac{p_{ij}}{1 - p_{ij}}) = \beta_0 + \alpha_i + \beta_1 X_{j}
+$$
+
+In the equation above, we use the following definitions:
+
+-   $p_{ij}$: The proportion of cells in a given cluster in patient *i* and FOV *j*
+-   $\alpha_i^{(p)}$: A random intercept for each patient *i* in which $\alpha_i^{(p)}$ ~ $N(0, \sigma_p)$, where $\sigma_p$ is estimated during model fitting.
+-   $X_{j}$: an indicator variable representing whether or not an FOV j was taken from an SJIA-PAP patient (1 if yes, 0 otherwise). Depending on which comparisons we're making, what $X_j$ stands for can change (but it always represents which `outcome` FOV j has been annotated with.
+-   All $\beta$'s are linear model parameters optimized during model fitting.
+
+Using the above setup, we can apply null-hypothesis significance testing to $\beta_1$ (under the null hypothesis that $\beta_1 = 0$): if $\beta_1$ is significantly different from 0 in the model, we can state that the proportion of cells in our cluster differs significantly between the levels of `outcome` we're investigating while controlling for individual-to-individual variation.
+
+## PAP vs. non-PAP
+
+Using this framework, we can first compare the PAP samples (either SJIA-PAP or nonSJIA-PAP) to the control samples in our cohort. Note that we set a filter so that clusters that have fewer than 3 cells in 5 samples are removed from the analysis, as clusters with this few cells can't be used to estimate reliable proportions for a cell subtype's relative abundance in the sample it was collected from.
 
 ```{r}
+pap_daa <- 
+  mibi_data %>% 
+  select(fov_id, cluster_name, outcome, patient_id, any_of(functional_markers)) %>%
+  mutate(outcome = if_else(outcome %in% c("SJIA-PAP", "nonSJIA-PAP"), "PAP", outcome)) %>%
+  pap_perform_daa(
+    data_tibble = ., 
+    sample_col = fov_id, 
+    cluster_col = cluster_name, 
+    fixed_effect_cols = outcome,
+    random_effect_cols = c(patient_id), 
+    include_observation_level_random_effects = FALSE
+  )
 
+pap_daa$da_results %>% 
+  topTable(all = TRUE) %>% 
+  as_tibble() %>% 
+  arrange(p_adj) %>% 
+  mutate(significance = if_else(p_adj < 0.05, "*", "")) %>% 
+  knitr::kable()
+```
+
+
+From these results, we can see that, when taking indivual random-effects into account, there are no statistically significant differentially abundance clusters between PAP and non-PAP samples (at least at the level of power we have available to us in this study). 
+
+```{r, eval = FALSE}
+overall_daa$da_results_limma %>% 
+  topTable(all = TRUE) %>% 
+  as_tibble()
+```
+
+## SJIA-PAP vs. Controls
+
+The second comparison we can run is between SJIA-PAP samples and control samples. 
+
+```{r}
+daa_sjia_pap_vs_controls <- 
+  mibi_data %>% 
+  select(fov_id, cluster_name, outcome, patient_id, any_of(functional_markers)) %>% 
+  #filter(!(fov_id %in% healthy_fovs_in_pap_patients)) %>% 
+  filter(outcome != "nonSJIA-PAP") %>% 
+  pap_perform_daa(
+    data_tibble = ., 
+    sample_col = fov_id, 
+    cluster_col = cluster_name, 
+    fixed_effect_cols = outcome,
+    random_effect_cols = c(patient_id), 
+    include_observation_level_random_effects = FALSE
+  )
+
+daa_sjia_pap_vs_controls$da_results %>% 
+  topTable(all = TRUE) %>% 
+  as_tibble() %>% 
+  arrange(p_adj) %>% 
+  mutate(significance = if_else(p_adj < 0.05, "*", "")) %>% 
+  knitr::kable()
+```
+
+In these results, we can see that neutrophils are differentially abundant in SJIA-PAP and control samples. 
+
+```{r, eval = FALSE}
+daa_sjia_pap_vs_controls$da_results_limma %>% 
+  topTable(all = TRUE) %>% 
+  as_tibble()
+```
+
+## SJIA-PAP vs. nonSJIA-PAP
+
+The third comparison we can run is between SJIA-PAP and nonSJIA-PAP samples. 
+
+```{r}
+daa_sjia_pap_vs_nonsjia_pap <- 
+  mibi_data %>% 
+  select(fov_id, cluster_name, outcome, patient_id, any_of(functional_markers)) %>% 
+  filter(outcome != "Control") %>% 
+  pap_perform_daa(
+    data_tibble = ., 
+    sample_col = fov_id, 
+    cluster_col = cluster_name, 
+    fixed_effect_cols = outcome,
+    random_effect_cols = c(patient_id), 
+    include_observation_level_random_effects = FALSE
+  )
+
+daa_sjia_pap_vs_nonsjia_pap$da_results %>% 
+  topTable(all = TRUE) %>% 
+  as_tibble() %>% 
+  arrange(p_adj) %>% 
+  mutate(significance = if_else(p_adj < 0.05, "*", ""))
+```
+
+And once again we can see that there are no differentially abundant clusters between these sample types. 
+
+```{r, eval = FALSE}
+daa_sjia_pap_vs_nonsjia_pap$da_results_limma %>% 
+  topTable(all = TRUE) %>% 
+  as_tibble()
+```
+
+## nonSJIA-PAP vs. Controls
+
+The final between-patients comparison we can run is between nonSJIA-PAP samples and control samples. 
+
+```{r}
+daa_control_vs_nonsjia_pap <- 
+  mibi_data %>% 
+  select(fov_id, cluster_name, outcome, patient_id, any_of(functional_markers)) %>% 
+  #filter(!(fov_id %in% healthy_fovs_in_pap_patients)) %>% 
+  filter(outcome != "SJIA-PAP") %>% 
+  pap_perform_daa(
+    data_tibble = ., 
+    sample_col = fov_id, 
+    cluster_col = cluster_name, 
+    fixed_effect_cols = outcome,
+    random_effect_cols = c(patient_id), 
+    include_observation_level_random_effects = FALSE
+  )
+
+daa_control_vs_nonsjia_pap$da_results %>% 
+  topTable(all = TRUE) %>% 
+  as_tibble() %>% 
+  arrange(p_adj) %>% 
+  mutate(significance = if_else(p_adj < 0.05, "*", ""))
+```
+
+And in this case we can see that there are several cell subtypes that are differentially abundant (pneumocytes, monocytes, endothelial cells, and iNOS+ Macrophages). 
+
+```{r, eval = FALSE}
+daa_control_vs_nonsjia_pap$da_results_limma %>% 
+  topTable(all = TRUE) %>% 
+  as_tibble()
 ```
 
 
 ## Visualization
 
 ```{r}
+interesting_clusters <- 
+  c("Neutrophil", "CD209+_Mac", "CD14+_Mono", "iNOS+_Mac")
 
+mibi_data %>% 
+  count(fov_id, cluster_name, patient_id, outcome) %>% 
+  group_by(fov_id) %>% 
+  mutate(
+    total_cells = sum(n), 
+    prop = n / total_cells
+  ) %>% 
+  filter(cluster_name %in% interesting_clusters) %>% 
+  ggplot(aes(x = outcome, y = prop, fill = outcome)) + 
+  geom_violin(draw_quantiles = 0.5) + 
+  geom_point(shape = 21, position = position_dodge(width = 0.3)) + 
+  facet_wrap(facets = vars(cluster_name), scales = "free")
 ```
 
-
-
-# Differential Expression Analysis
-
-## Data structures
 
 ```{r}
+mibi_data %>% 
+  count(fov_id, cluster_name, patient_id, outcome) %>% 
+  group_by(fov_id) %>% 
+  mutate(
+    total_cells = sum(n), 
+    prop = n / total_cells
+  ) %>%  
+  group_by(cluster_name, outcome) %>% 
+  summarize(prop = mean(prop)) %>% 
+  ggplot(aes(y = cluster_name, x = prop, fill = outcome)) + 
+  geom_col(position = "dodge") + 
+  geom_point(
+    position = position_dodge(width = 1), 
+    size = 0.2, 
+    data = 
+      mibi_data %>% 
+      count(fov_id, cluster_name, patient_id, outcome) %>% 
+      group_by(fov_id) %>% 
+      mutate(
+        total_cells = sum(n), 
+        prop = n / total_cells
+      ) %>% 
+      ungroup()
+  )
 
 ```
 
+`r pagebreak()`
 
-## Statistical testing
+# Differential Abundance Analysis - within patients
+
+In addition to the between-patients comparisons, we can also run another set of comparisons that leverages a within-subjects design to increase statistical power. As it turns out, for several of our SJIA-PAP samples, one of the FOVs collected was annotated as a "healthy" section of tissue relative to the others (which had more of the hallmark histopathological features of SJIA-PAP). We can compare the abundance of each of our immune cell subpopulations within the same patients by comparing the "healthy" FOV to the other FOVs taken from the same patient. 
+
 
 ```{r}
+# find patients who had at least one "healthy" FOV
+interesting_patients <- 
+  mibi_data %>% 
+  filter(fov_id %in% healthy_fovs_in_pap_patients) %>% 
+  distinct(patient_id) %>% 
+  pull(patient_id)
+
+interesting_patients
+```
+
+## Processing 
+
+```{r}
+paired_patients <- 
+  mibi_data %>% 
+  filter(patient_id %in% interesting_patients) %>% 
+  # annotate FOVs that are "healthy-looking" according to our pathologist
+  mutate(
+    fov_condition = 
+           if_else(fov_id %in% healthy_fovs_in_pap_patients, "healthy", "pap")
+  )
 
 ```
 
+## Statistical analysis
+
+```{r, message = FALSE, warning = FALSE}
+paired_daa_results <- 
+  paired_patients %>% 
+  filter(outcome != "nonSJIA-PAP") %>% 
+  pap_perform_daa(
+    data_tibble = ., 
+    sample_col = fov_id, 
+    cluster_col = cluster_name, 
+    fixed_effect_cols = fov_condition, 
+    random_effect_cols = patient_id, 
+    include_observation_level_random_effects = FALSE
+  )
+
+paired_daa_results %>% 
+  pluck("da_results") %>% 
+  topTable(all = TRUE) %>% 
+  as_tibble() %>% 
+  mutate(significant = if_else(p_adj < 0.05, "*", "")) %>% 
+  arrange(p_adj) %>%  
+  knitr::kable()
+```
+
+
+
+```{r, eval = FALSE}
+paired_daa_results %>% 
+  pluck("da_results_limma") %>% 
+  topTable(all = TRUE) %>% 
+  as_tibble() %>% 
+  mutate(significant = if_else(p_adj < 0.05, "*", "")) %>% 
+  arrange(p_adj)
+```
+
+From these results, we can see that there are several immune cell subtypes that, when using a paired design, we find are enriched in parts of the SJIA-PAP lung that actually show histopathological signs of disease compared to paired parts of the SJIA-PAP lung that do not show histopathological signs of disease.
+
+We can visualize these differences below. 
 
 ## Visualization
 
 ```{r}
+paired_p_values <- 
+  paired_daa_results %>% 
+  pluck("da_results") %>% 
+  topTable(all = TRUE) %>% 
+  as_tibble() %>% 
+  mutate(
+    significant = if_else(p_adj < 0.05, "*", ""), 
+    new_cluster_name = if_else(significant == "*", str_c(cluster_id, "*"), as.character(cluster_id))
+  ) %>% 
+  arrange(p_adj) %>% 
+  rename(cluster_name = cluster_id)
+
+sig_clusters <- 
+  paired_p_values %>% 
+  filter(significant == "*") %>% 
+  pull(cluster_name)
+
+# calculate the number of fovs used for each patient in each "condition"
+num_fov_tibble <- 
+  paired_patients %>% 
+  distinct(fov_id, patient_id, fov_condition) %>% 
+  count(patient_id, fov_condition, name = "num_fovs")
+
+paired_plot_data <- 
+  paired_patients %>% 
+  mutate(
+    cluster_name = 
+      factor(cluster_name, levels = pull(paired_p_values, cluster_name)) , 
+  ) %>% 
+  count(cluster_name, patient_id, fov_id, fov_condition, .drop = FALSE) %>%
+  group_by(fov_id) %>% 
+  mutate(
+    total_fov_cells = sum(n),
+    prop = n / total_fov_cells
+  ) %>% 
+  ungroup() %>% 
+  group_by(fov_condition, patient_id, cluster_name) %>% 
+  summarize(
+    sd = sd(prop, na.rm = TRUE),
+    prop = mean(prop, na.rm = TRUE), 
+  ) %>% 
+  drop_na(cluster_name) %>% 
+  ungroup() %>% 
+  #mutate(across(c(patient_id, fov_condition), .f = as.factor)) %>% 
+  complete(patient_id, fov_condition, cluster_name, fill = list(prop = 0)) %>% 
+  left_join(num_fov_tibble) %>% 
+  mutate(
+    sem = sd / sqrt(num_fovs)
+  )
 
 ```
 
+
+```{r, fig.height = 8, fig.width = 9}
+paired_plot_data %>% 
+  left_join(paired_p_values) %>% 
+  mutate(new_cluster_name = fct_reorder(new_cluster_name, p_adj)) %>%  
+  drop_na(new_cluster_name) %>% 
+  ggplot(aes(y = prop, x = fov_condition, fill = fov_condition)) + 
+  geom_line(aes(group = patient_id), color = "black") + 
+  geom_errorbar(
+    aes(x = fov_condition, y = prop, ymin = prop - sem, ymax = prop + sem),
+    width = 0.2, 
+    alpha = 0.7
+  ) +
+  geom_point(shape = 21) + 
+  #scale_y_continuous(oob = scales::oob_squish_infinite) + 
+  facet_wrap(facets = vars(new_cluster_name), scales = "free", ncol = 4) + 
+  labs(
+    x = NULL, 
+    y = "Proportion of cells"
+  )
+```
+
+```{r}
+paired_plot_data %>% 
+  left_join(paired_p_values) %>% 
+  mutate(new_cluster_name = fct_reorder(new_cluster_name, p_adj)) %>%  
+  drop_na(new_cluster_name) %>% 
+  select(patient_id, fov_condition, new_cluster_name, prop, p_adj) %>% 
+  pivot_wider(
+    names_from = fov_condition, 
+    values_from = prop
+  ) %>% 
+  group_by(new_cluster_name) %>% 
+  summarize(across(c(healthy, pap), mean, na.rm = TRUE)) %>% 
+  mutate(
+    fc = pap / healthy, 
+    log2_fc = log(fc, base = 2)
+  ) %>% 
+  left_join(paired_p_values) %>% 
+  mutate(
+    neg_log_p_val = -log(p_adj),
+    cluster_type = 
+      case_when(
+        p_adj > 0.05 ~ "Not significant", 
+        fc > 1       ~ "Increased", 
+        fc < 1       ~ "Decreased"
+      )
+  ) %>% 
+  ggplot(aes(x = log2_fc, y = neg_log_p_val, fill = cluster_type)) + 
+  geom_hline(yintercept = -log(0.05), color = "black", linetype = "dashed") + 
+  geom_vline(xintercept = 0, color = "black", linetype = "dashed") +
+  geom_point(shape = 21, size = 2.5) + 
+  ggrepel::geom_text_repel(aes(label = new_cluster_name), size = 2.5, color = "black") + 
+  labs(
+    subtitle = "Differentially abundant clusters in diseased vs. non-diseased regions of paired SJIA-PAP samples", 
+    x = "log2FC", 
+    y = "-log(p-value)",
+    fill = NULL
+  )
+
+```
+
+`r pagebreak()`
+
+# Differential Expression Analysis - between patients
+
+[Blurb about how we're doing the same as the between-patients design above, but this time using a LMM to predict median marker expression for each cluster]
+
+## PAP vs. non-PAP 
+
+```{r}
+pap_dea <- 
+  mibi_data %>% 
+  select(fov_id, cluster_name, outcome, patient_id, any_of(functional_markers)) %>%
+  mutate(outcome = if_else(outcome %in% c("SJIA-PAP", "nonSJIA-PAP"), "PAP", outcome)) %>% 
+  pap_perform_dea(
+    data_tibble = ., 
+    sample_col = fov_id, 
+    cluster_col = cluster_name, 
+    fixed_effect_cols = outcome,
+    random_effect_col = c(patient_id), 
+    min_cells = 5, 
+    min_samples = 5 
+  )
+
+# only show the top 25 most significant results
+pap_dea$de_results %>% 
+  topTable(top_n = 25) %>% 
+  as_tibble() %>% 
+  arrange(p_adj) %>% 
+  mutate(significance = if_else(p_adj < 0.05, "*", "")) %>% 
+  knitr::kable()
+```
+
+## SJIA-PAP vs. Controls
+
+```{r}
+dea_sjia_pap_vs_controls <- 
+  mibi_data %>% 
+  select(fov_id, cluster_name, outcome, patient_id, any_of(functional_markers)) %>%
+  #filter(!(fov_id %in% healthy_fovs_in_pap_patients)) %>% 
+  filter(outcome != "nonSJIA-PAP") %>% 
+  pap_perform_dea(
+    data_tibble = ., 
+    sample_col = fov_id, 
+    cluster_col = cluster_name, 
+    fixed_effect_cols = outcome,
+    random_effect_col = c(patient_id), 
+    min_cells = 5, 
+    min_samples = 5
+  )
+
+dea_sjia_pap_vs_controls$de_results %>% 
+  topTable(top_n = 25) %>% 
+  as_tibble() %>% 
+  arrange(p_adj) %>% 
+  mutate(significance = if_else(p_adj < 0.05, "*", "")) %>% 
+  knitr::kable()
+```
+
+
+## SJIA-PAP vs. nonSJIA-PAP
+
+```{r}
+dea_sjia_pap_vs_nonsjia_pap <- 
+  mibi_data %>% 
+  select(fov_id, cluster_name, outcome, patient_id, any_of(functional_markers)) %>%
+  #filter(!(fov_id %in% healthy_fovs_in_pap_patients)) %>% 
+  filter(outcome != "Control") %>% 
+  pap_perform_dea(
+    data_tibble = ., 
+    sample_col = fov_id, 
+    cluster_col = cluster_name, 
+    fixed_effect_cols = outcome,
+    random_effect_col = c(patient_id), 
+    min_cells = 20, 
+    min_samples = 10
+  )
+
+dea_sjia_pap_vs_nonsjia_pap$de_results %>% 
+  topTable(top_n = 25) %>% 
+  as_tibble() %>% 
+  arrange(p_adj) %>% 
+  mutate(significance = if_else(p_adj < 0.05, "*", "")) %>% 
+  knitr::kable()
+```
+
+## nonSJIA-PAP vs. Controls
+
+```{r}
+dea_control_vs_nonsjia_pap <- 
+  mibi_data %>% 
+  select(fov_id, cluster_name, outcome, patient_id, any_of(functional_markers)) %>%
+  #filter(!(fov_id %in% healthy_fovs_in_pap_patients)) %>% 
+  filter(outcome != "SJIA-PAP") %>% 
+  pap_perform_dea(
+    data_tibble = ., 
+    sample_col = fov_id, 
+    cluster_col = cluster_name, 
+    fixed_effect_cols = outcome,
+    random_effect_col = c(patient_id), 
+    min_cells = 20, 
+    min_samples = 10
+  )
+
+dea_control_vs_nonsjia_pap$de_results %>% 
+  topTable(top_n = 25) %>% 
+  as_tibble() %>% 
+  arrange(p_adj) %>% 
+  mutate(significance = if_else(p_adj < 0.05, "*", "")) %>% 
+  knitr::kable()
+```
+
+## Visualization
+
+```{r}
+dea_sjia_pap_vs_control_results <- 
+  dea_sjia_pap_vs_controls$de_results %>% 
+  topTable(all = TRUE) %>% 
+  as_tibble() %>% 
+  arrange(p_adj) %>% 
+  mutate(significance = if_else(p_adj < 0.05, "*", ""))  %>% 
+  rename(cluster_name = cluster_id)
+
+# number of significantly different markers in each cluster
+dea_sjia_pap_vs_control_results %>% 
+  filter(significance == "*") %>% 
+  count(cluster_name)
+```
+
+
+```{r, fig.height = 10}
+feature_volcano_tibble <- 
+  mibi_data %>% 
+  filter(outcome != "nonSJIA-PAP") %>% 
+  group_by(cluster_name, outcome, patient_id) %>% 
+  summarize(across(any_of(functional_markers), .f = mean, na.rm = TRUE)) %>% 
+  ungroup() %>% 
+  pivot_longer(
+    cols = any_of(functional_markers), 
+    names_to = "marker_id", 
+    values_to = "median"
+  ) %>% 
+  group_by(outcome, marker_id, cluster_name) %>% 
+  summarize(median = mean(median, na.rm = TRUE)) %>% 
+  ungroup() %>% 
+  pivot_wider(
+    names_from = outcome, 
+    values_from = median
+  ) %>% 
+  mutate(
+    fc = `SJIA-PAP` / Control, 
+    log2_fc = log(fc, base = 2)
+  ) %>% 
+  #filter(!is.nan(fc)) %>% 
+  left_join(
+    dea_sjia_pap_vs_control_results %>% 
+      drop_na()
+  ) %>% 
+  arrange(p_adj) %>% 
+  mutate(
+    neg_log_p_val = -log(p_adj), 
+    feature_type = 
+      case_when(
+        p_adj > 0.05 ~ "Not significant", 
+        fc < 1       ~ "Decreased", 
+        fc > 1       ~ "Increased"
+      ), 
+    feature = str_c(marker_id, cluster_name, sep = "@"), 
+  ) %>% 
+  drop_na(feature_type, significance)
+
+feature_volcano_tibble %>% 
+  ggplot(aes(x = log2_fc, y = neg_log_p_val, fill = feature_type)) + 
+  geom_hline(yintercept = -log(0.05), color = "black", linetype = "dashed") + 
+  geom_vline(xintercept = 0, color = "black", linetype = "dashed") +
+  geom_point(shape = 21, size = 2.5) + 
+  ggrepel::geom_text_repel(
+    aes(label = marker_id), 
+    data = filter(feature_volcano_tibble, feature_type != "Not significant"), 
+    size = 2.5, 
+    color = "black"
+  ) + 
+  scale_x_continuous(oob = scales::oob_squish_infinite) + 
+  scale_y_continuous(oob = scales::oob_squish_infinite) + 
+  facet_wrap(facets = vars(cluster_name), ncol = 3) + 
+  labs(
+    subtitle = "Differentially expressed markers in SJIA-PAP vs. control samples", 
+    x = "log2FC", 
+    y = "-log(p-value)",
+    fill = NULL
+  )
+```
+
+`r pagebreak()`
+
+# Differential Expression Analysis - within patients 
+
+```{r}
+paired_dea_results <- 
+  paired_patients %>% 
+  filter(outcome != "nonSJIA-PAP") %>% 
+  select(
+    fov_id,
+    cluster_name, 
+    fov_condition, 
+    patient_id, 
+    any_of(functional_markers)
+  ) %>% 
+  pap_perform_dea(
+    data_tibble = ., 
+    sample_col = fov_id, 
+    cluster_col = cluster_name, 
+    fixed_effect_cols = fov_condition, 
+    random_effect_col = c(patient_id), 
+    min_cells = 5, 
+    min_samples = 5
+  )
+
+paired_dea_results %>% 
+  pluck("de_results") %>% 
+  topTable(top_n = 25) %>% 
+  as_tibble() %>% 
+  mutate(significant = if_else(p_adj < 0.10, "*", "")) %>% 
+  arrange(p_adj) %>% 
+  knitr::kable()
+
+```
+
+
+
+```{eval = FALSE}
+paired_dea_results_2 <- 
+  testDS_LMM(
+    d_counts = calcCounts(paired_dea_results$data_diff), 
+    d_medians = calcMedians(paired_dea_results$data_diff), 
+    formula = paired_dea_results$my_formula, 
+    contrast = paired_dea_results$my_contrast, 
+    min_cells = 10, 
+    min_samples = 5, 
+    markers_to_test = rep(TRUE, nrow(paired_dea_results$marker_info))
+  )
+
+paired_dea_results_2 %>% 
+  topTable(all = TRUE) %>% 
+  as_tibble() %>% 
+  mutate(significant = if_else(p_adj < 0.10, "*", "")) %>% 
+  arrange(p_adj)
+```
+
+
+`r pagebreak()`
+
+# Spatial Analysis
+
+[surfactant analysis]
 
