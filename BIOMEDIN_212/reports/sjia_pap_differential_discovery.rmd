@@ -277,7 +277,7 @@ $$
 In the equation above, we use the following definitions:
 
 -   $p_{ij}$: The proportion of cells in a given cluster in patient *i* and FOV *j*
--   $\alpha_i$: A random intercept for each patient *i* in which $\alpha_i^{(p)}$ ~ $N(0, \sigma_p)$, where $\sigma_p$ is estimated during model fitting.
+-   $\alpha_i$: A random intercept for each patient *i* in which $\alpha_i$ ~ $N(0, \sigma_p)$, where $\sigma_p$ is estimated during model fitting.
 -   $X_{j}$: an indicator variable representing whether or not an FOV j was taken from an SJIA-PAP patient (1 if yes, 0 otherwise). Depending on which comparisons we're making, what $X_j$ stands for can change (but it always represents which `outcome` FOV j has been annotated with.
 -   All $\beta$'s are linear model parameters optimized during model fitting.
 
@@ -320,7 +320,6 @@ The second comparison we can run is between SJIA-PAP samples and control samples
 daa_sjia_pap_vs_controls <- 
   mibi_data %>% 
   select(fov_id, cluster_name, outcome, patient_id, any_of(functional_markers)) %>% 
-  #filter(!(fov_id %in% healthy_fovs_in_pap_patients)) %>% 
   filter(outcome != "nonSJIA-PAP") %>% 
   pap_perform_daa(
     data_tibble = ., 
@@ -363,7 +362,8 @@ daa_sjia_pap_vs_nonsjia_pap$da_results %>%
   topTable(all = TRUE) %>% 
   as_tibble() %>% 
   arrange(p_adj) %>% 
-  mutate(significance = if_else(p_adj < 0.05, "*", ""))
+  mutate(significance = if_else(p_adj < 0.05, "*", "")) %>% 
+  knitr::kable()
 ```
 
 And once again we can see that there are no differentially abundant clusters between these sample types. 
@@ -377,7 +377,6 @@ The final between-patients comparison we can run is between nonSJIA-PAP samples 
 daa_control_vs_nonsjia_pap <- 
   mibi_data %>% 
   select(fov_id, cluster_name, outcome, patient_id, any_of(functional_markers)) %>% 
-  #filter(!(fov_id %in% healthy_fovs_in_pap_patients)) %>% 
   filter(outcome != "SJIA-PAP") %>% 
   pap_perform_daa(
     data_tibble = ., 
@@ -392,7 +391,8 @@ daa_control_vs_nonsjia_pap$da_results %>%
   topTable(all = TRUE) %>% 
   as_tibble() %>% 
   arrange(p_adj) %>% 
-  mutate(significance = if_else(p_adj < 0.05, "*", ""))
+  mutate(significance = if_else(p_adj < 0.05, "*", "")) %>% 
+  knitr::kable()
 ```
 
 And in this case we can see that there are several cell subtypes that are differentially abundant (pneumocytes, monocytes, endothelial cells, and iNOS+ Macrophages). 
@@ -556,7 +556,6 @@ paired_plot_data <-
   ) %>% 
   drop_na(cluster_name) %>% 
   ungroup() %>% 
-  #mutate(across(c(patient_id, fov_condition), .f = as.factor)) %>% 
   complete(patient_id, fov_condition, cluster_name, fill = list(prop = 0)) %>% 
   left_join(num_fov_tibble) %>% 
   mutate(
@@ -579,7 +578,6 @@ paired_plot_data %>%
     alpha = 0.7
   ) +
   geom_point(shape = 21) + 
-  #scale_y_continuous(oob = scales::oob_squish_infinite) + 
   facet_wrap(facets = vars(new_cluster_name), scales = "free", ncol = 4) + 
   labs(
     x = NULL, 
@@ -665,7 +663,6 @@ pap_dea$de_results %>%
 dea_sjia_pap_vs_controls <- 
   mibi_data %>% 
   select(fov_id, cluster_name, outcome, patient_id, any_of(functional_markers)) %>%
-  #filter(!(fov_id %in% healthy_fovs_in_pap_patients)) %>% 
   filter(outcome != "nonSJIA-PAP") %>% 
   pap_perform_dea(
     data_tibble = ., 
@@ -692,7 +689,6 @@ dea_sjia_pap_vs_controls$de_results %>%
 dea_sjia_pap_vs_nonsjia_pap <- 
   mibi_data %>% 
   select(fov_id, cluster_name, outcome, patient_id, any_of(functional_markers)) %>%
-  #filter(!(fov_id %in% healthy_fovs_in_pap_patients)) %>% 
   filter(outcome != "Control") %>% 
   pap_perform_dea(
     data_tibble = ., 
@@ -718,7 +714,6 @@ dea_sjia_pap_vs_nonsjia_pap$de_results %>%
 dea_control_vs_nonsjia_pap <- 
   mibi_data %>% 
   select(fov_id, cluster_name, outcome, patient_id, any_of(functional_markers)) %>%
-  #filter(!(fov_id %in% healthy_fovs_in_pap_patients)) %>% 
   filter(outcome != "SJIA-PAP") %>% 
   pap_perform_dea(
     data_tibble = ., 
@@ -752,7 +747,8 @@ dea_sjia_pap_vs_control_results <-
 # number of significantly different markers in each cluster
 dea_sjia_pap_vs_control_results %>% 
   filter(significance == "*") %>% 
-  count(cluster_name)
+  count(cluster_name) %>% 
+  knitr::kable()
 ```
 
 
