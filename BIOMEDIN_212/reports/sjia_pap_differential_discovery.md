@@ -1,7 +1,46 @@
 Aim 1 Differential Discovery Analysis
 ================
 
-# Setup
+-   [1. Setup](#1-setup)
+-   [2. Read in data](#2-read-in-data)
+-   [3. Pre-process data](#3-pre-process-data)
+-   [4. Basic data summary](#4-basic-data-summary)
+    -   [Number of unique FOVs in each
+        condition](#number-of-unique-fovs-in-each-condition)
+    -   [Number of unique patients in each
+        condition](#number-of-unique-patients-in-each-condition)
+    -   [Number of unique cells in each
+        condition](#number-of-unique-cells-in-each-condition)
+    -   [Number of cells for each
+        patient](#number-of-cells-for-each-patient)
+    -   [Number of cells in each FOV](#number-of-cells-in-each-fov)
+-   [5. Differential Abundance Analysis - between
+    patients](#5-differential-abundance-analysis---between-patients)
+    -   [PAP vs. non-PAP](#pap-vs-non-pap)
+    -   [SJIA-PAP vs. Controls](#sjia-pap-vs-controls)
+    -   [SJIA-PAP vs. nonSJIA-PAP](#sjia-pap-vs-nonsjia-pap)
+    -   [nonSJIA-PAP vs. Controls](#nonsjia-pap-vs-controls)
+    -   [Visualization](#visualization)
+-   [6. Differential Abundance Analysis - within
+    patients](#6-differential-abundance-analysis---within-patients)
+    -   [Processing](#processing)
+    -   [Statistical analysis](#statistical-analysis)
+    -   [Visualization](#visualization-1)
+-   [7. Differential Expression Analysis - between
+    patients](#7-differential-expression-analysis---between-patients)
+    -   [PAP vs. non-PAP](#pap-vs-non-pap-1)
+    -   [SJIA-PAP vs. Controls](#sjia-pap-vs-controls-1)
+    -   [SJIA-PAP vs. nonSJIA-PAP](#sjia-pap-vs-nonsjia-pap-1)
+    -   [nonSJIA-PAP vs. Controls](#nonsjia-pap-vs-controls-1)
+    -   [Visualization](#visualization-2)
+-   [8. Differential Expression Analysis - within
+    patients](#8-differential-expression-analysis---within-patients)
+-   [9. Spatial Analysis](#9-spatial-analysis)
+    -   [Annotate cells](#annotate-cells)
+    -   [DAA](#daa)
+    -   [DEA](#dea)
+
+# 1. Setup
 
 ``` r
 # libraries
@@ -55,7 +94,7 @@ functional_markers <-
 
 <div style="page-break-before: always;" />
 
-# Read in data
+# 2. Read in data
 
 ``` r
 # metadata 
@@ -104,16 +143,15 @@ surf_data <-
 
 <div style="page-break-before: always;" />
 
-# Pre-process data
-
-First, I’ll just join the metadata into the mibi\_data cell-level
-expression matrix.
+# 3. Pre-process data
 
 ``` r
+# join the mibi single-cell data with the FOV metadata
 mibi_data <- 
   mibi_data %>% 
   left_join(metadata)
 
+# count how many cells there are in each FOV type
 mibi_data %>% 
   count(category)
 ```
@@ -245,7 +283,7 @@ mibi_data <-
 
 <div style="page-break-before: always;" />
 
-# Basic data summary
+# 4. Basic data summary
 
 ## Number of unique FOVs in each condition
 
@@ -347,7 +385,7 @@ mibi_data %>%
 
 <div style="page-break-before: always;" />
 
-# Differential Abundance Analysis - between patients
+# 5. Differential Abundance Analysis - between patients
 
 In Aim 1, we proposed a differential abundance analysis of different
 immune cell subtypes (represented by the column `cluster_name` in
@@ -395,15 +433,14 @@ In the equation above, we use the following definitions:
 
 -   *p*<sub>*i**j*</sub>: The proportion of cells in a given cluster in
     patient *i* and FOV *j*
--   *α*<sub>*i*</sub><sup>(*p*)</sup>: A random intercept for each
-    patient *i* in which *α*<sub>*i*</sub><sup>(*p*)</sup> \~
-    *N*(0, *σ*<sub>*p*</sub>), where *σ*<sub>*p*</sub> is estimated
-    during model fitting.
+-   *α*<sub>*i*</sub>: A random intercept for each patient *i* in which
+    *α*<sub>*i*</sub> \~ *N*(0, *σ*), where *σ* is estimated during
+    model fitting.
 -   *X*<sub>*j*</sub>: an indicator variable representing whether or not
     an FOV j was taken from an SJIA-PAP patient (1 if yes, 0 otherwise).
     Depending on which comparisons we’re making, what *X*<sub>*j*</sub>
     stands for can change (but it always represents which `outcome` FOV
-    j has been annotated with.
+    j has been annotated with).
 -   All *β*’s are linear model parameters optimized during model
     fitting.
 
@@ -469,16 +506,10 @@ pap_daa$da_results %>%
 | Mast\_cell         | 0.8741013 | 0.9541837 |              |
 | Giant\_cell        |        NA |        NA | NA           |
 
-From these results, we can see that, when taking indivual random-effects
-into account, there are no statistically significant differentially
-abundance clusters between PAP and non-PAP samples (at least at the
-level of power we have available to us in this study).
-
-``` r
-overall_daa$da_results_limma %>% 
-  topTable(all = TRUE) %>% 
-  as_tibble()
-```
+From these results, we can see that, when taking individual
+random-effects into account, there are no statistically significant
+differentially abundant clusters between PAP and non-PAP samples (at
+least at the level of power we have available to us in this study).
 
 ## SJIA-PAP vs. Controls
 
@@ -489,7 +520,6 @@ samples.
 daa_sjia_pap_vs_controls <- 
   mibi_data %>% 
   select(fov_id, cluster_name, outcome, patient_id, any_of(functional_markers)) %>% 
-  #filter(!(fov_id %in% healthy_fovs_in_pap_patients)) %>% 
   filter(outcome != "nonSJIA-PAP") %>% 
   pap_perform_daa(
     data_tibble = ., 
@@ -534,12 +564,6 @@ daa_sjia_pap_vs_controls$da_results %>%
 In these results, we can see that neutrophils are differentially
 abundant in SJIA-PAP and control samples.
 
-``` r
-daa_sjia_pap_vs_controls$da_results_limma %>% 
-  topTable(all = TRUE) %>% 
-  as_tibble()
-```
-
 ## SJIA-PAP vs. nonSJIA-PAP
 
 The third comparison we can run is between SJIA-PAP and nonSJIA-PAP
@@ -563,32 +587,36 @@ daa_sjia_pap_vs_nonsjia_pap$da_results %>%
   topTable(all = TRUE) %>% 
   as_tibble() %>% 
   arrange(p_adj) %>% 
-  mutate(significance = if_else(p_adj < 0.05, "*", ""))
+  mutate(significance = if_else(p_adj < 0.05, "*", "")) %>% 
+  knitr::kable()
 ```
 
-    ## # A tibble: 21 x 4
-    ##    cluster_id         p_val p_adj significance
-    ##    <fct>              <dbl> <dbl> <chr>       
-    ##  1 CD209+_Mac        0.126  0.595 ""          
-    ##  2 CD4+_Tcell        0.0965 0.595 ""          
-    ##  3 CD57+_ImmuneOther 0.0777 0.595 ""          
-    ##  4 M2_Mac            0.149  0.595 ""          
-    ##  5 Mesenchymal       0.0569 0.595 ""          
-    ##  6 Fibroblast        0.184  0.614 ""          
-    ##  7 CD16+_ImmuneOther 0.247  0.618 ""          
-    ##  8 Treg              0.217  0.618 ""          
-    ##  9 Neutrophil        0.358  0.795 ""          
-    ## 10 Bcell             0.494  0.824 ""          
-    ## # … with 11 more rows
+| cluster\_id        |    p\_val |    p\_adj | significance |
+|:-------------------|----------:|----------:|:-------------|
+| CD209+\_Mac        | 0.1262413 | 0.5950393 |              |
+| CD4+\_Tcell        | 0.0964778 | 0.5950393 |              |
+| CD57+\_ImmuneOther | 0.0777235 | 0.5950393 |              |
+| M2\_Mac            | 0.1487598 | 0.5950393 |              |
+| Mesenchymal        | 0.0569134 | 0.5950393 |              |
+| Fibroblast         | 0.1843179 | 0.6143931 |              |
+| CD16+\_ImmuneOther | 0.2473755 | 0.6184387 |              |
+| Treg               | 0.2167738 | 0.6184387 |              |
+| Neutrophil         | 0.3575358 | 0.7945239 |              |
+| Bcell              | 0.4944349 | 0.8240582 |              |
+| CD57+\_CD8+\_Tcell | 0.4888039 | 0.8240582 |              |
+| iNOS+\_Pneumocyte  | 0.4535573 | 0.8240582 |              |
+| CD11c+\_mDC        | 0.6615094 | 0.8268868 |              |
+| CD8+\_Tcell        | 0.6364111 | 0.8268868 |              |
+| Endothelial        | 0.5728799 | 0.8268868 |              |
+| Eosinophil         | 0.6216371 | 0.8268868 |              |
+| Lung\_Epithelium   | 0.7370731 | 0.8671449 |              |
+| CD14+\_Mono        | 0.9862027 | 0.9869697 |              |
+| iNOS+\_Mac         | 0.8927271 | 0.9869697 |              |
+| Mast\_cell         | 0.9869697 | 0.9869697 |              |
+| Giant\_cell        |        NA |        NA | NA           |
 
 And once again we can see that there are no differentially abundant
 clusters between these sample types.
-
-``` r
-daa_sjia_pap_vs_nonsjia_pap$da_results_limma %>% 
-  topTable(all = TRUE) %>% 
-  as_tibble()
-```
 
 ## nonSJIA-PAP vs. Controls
 
@@ -599,7 +627,6 @@ samples and control samples.
 daa_control_vs_nonsjia_pap <- 
   mibi_data %>% 
   select(fov_id, cluster_name, outcome, patient_id, any_of(functional_markers)) %>% 
-  #filter(!(fov_id %in% healthy_fovs_in_pap_patients)) %>% 
   filter(outcome != "SJIA-PAP") %>% 
   pap_perform_daa(
     data_tibble = ., 
@@ -614,33 +641,37 @@ daa_control_vs_nonsjia_pap$da_results %>%
   topTable(all = TRUE) %>% 
   as_tibble() %>% 
   arrange(p_adj) %>% 
-  mutate(significance = if_else(p_adj < 0.05, "*", ""))
+  mutate(significance = if_else(p_adj < 0.05, "*", "")) %>% 
+  knitr::kable()
 ```
 
-    ## # A tibble: 21 x 4
-    ##    cluster_id           p_val   p_adj significance
-    ##    <fct>                <dbl>   <dbl> <chr>       
-    ##  1 iNOS+_Pneumocyte  0.000208 0.00416 "*"         
-    ##  2 CD14+_Mono        0.00768  0.0487  "*"         
-    ##  3 Endothelial       0.00974  0.0487  "*"         
-    ##  4 iNOS+_Mac         0.00658  0.0487  "*"         
-    ##  5 CD57+_ImmuneOther 0.0125   0.0502  ""          
-    ##  6 CD16+_ImmuneOther 0.0346   0.115   ""          
-    ##  7 Bcell             0.119    0.283   ""          
-    ##  8 Fibroblast        0.127    0.283   ""          
-    ##  9 Treg              0.122    0.283   ""          
-    ## 10 CD11c+_mDC        0.312    0.567   ""          
-    ## # … with 11 more rows
+| cluster\_id        |    p\_val |    p\_adj | significance |
+|:-------------------|----------:|----------:|:-------------|
+| iNOS+\_Pneumocyte  | 0.0002079 | 0.0041581 | \*           |
+| CD14+\_Mono        | 0.0076753 | 0.0487124 | \*           |
+| Endothelial        | 0.0097425 | 0.0487124 | \*           |
+| iNOS+\_Mac         | 0.0065791 | 0.0487124 | \*           |
+| CD57+\_ImmuneOther | 0.0125417 | 0.0501667 |              |
+| CD16+\_ImmuneOther | 0.0346300 | 0.1154335 |              |
+| Bcell              | 0.1194941 | 0.2830523 |              |
+| Fibroblast         | 0.1273735 | 0.2830523 |              |
+| Treg               | 0.1219037 | 0.2830523 |              |
+| CD11c+\_mDC        | 0.3118498 | 0.5669996 |              |
+| Lung\_Epithelium   | 0.3053443 | 0.5669996 |              |
+| Neutrophil         | 0.3766638 | 0.6277730 |              |
+| Eosinophil         | 0.4573792 | 0.6533988 |              |
+| M2\_Mac            | 0.4476823 | 0.6533988 |              |
+| Mesenchymal        | 0.5003182 | 0.6670909 |              |
+| CD57+\_CD8+\_Tcell | 0.5506301 | 0.6882876 |              |
+| CD4+\_Tcell        | 0.6183913 | 0.7275192 |              |
+| CD209+\_Mac        | 0.6729049 | 0.7476721 |              |
+| CD8+\_Tcell        | 0.7636266 | 0.7636266 |              |
+| Mast\_cell         | 0.7446099 | 0.7636266 |              |
+| Giant\_cell        |        NA |        NA | NA           |
 
 And in this case we can see that there are several cell subtypes that
 are differentially abundant (pneumocytes, monocytes, endothelial cells,
 and iNOS+ Macrophages).
-
-``` r
-daa_control_vs_nonsjia_pap$da_results_limma %>% 
-  topTable(all = TRUE) %>% 
-  as_tibble()
-```
 
 ## Visualization
 
@@ -656,46 +687,31 @@ mibi_data %>%
     prop = n / total_cells
   ) %>% 
   filter(cluster_name %in% interesting_clusters) %>% 
+  #group_by(patient_id, cluster_name, outcome) %>% 
+  #summarize(prop = mean(prop)) %>% 
   ggplot(aes(x = outcome, y = prop, fill = outcome)) + 
   geom_violin(draw_quantiles = 0.5) + 
   geom_point(shape = 21, position = position_dodge(width = 0.3)) + 
   facet_wrap(facets = vars(cluster_name), scales = "free")
 ```
 
-![](sjia_pap_differential_discovery_files/figure-gfm/unnamed-chunk-20-1.png)<!-- -->
+![](sjia_pap_differential_discovery_files/figure-gfm/unnamed-chunk-16-1.png)<!-- -->
 
-``` r
-mibi_data %>% 
-  count(fov_id, cluster_name, patient_id, outcome) %>% 
-  group_by(fov_id) %>% 
-  mutate(
-    total_cells = sum(n), 
-    prop = n / total_cells
-  ) %>%  
-  group_by(cluster_name, outcome) %>% 
-  summarize(prop = mean(prop)) %>% 
-  ggplot(aes(y = cluster_name, x = prop, fill = outcome)) + 
-  geom_col(position = "dodge") + 
-  geom_point(
-    position = position_dodge(width = 1), 
-    size = 0.2, 
-    data = 
-      mibi_data %>% 
-      count(fov_id, cluster_name, patient_id, outcome) %>% 
-      group_by(fov_id) %>% 
-      mutate(
-        total_cells = sum(n), 
-        prop = n / total_cells
-      ) %>% 
-      ungroup()
-  )
-```
-
-![](sjia_pap_differential_discovery_files/figure-gfm/unnamed-chunk-21-1.png)<!-- -->
+From these plots, we can see that the differences between individual
+FOVS (even for these populations, which are the ones that came up in the
+analysis) are not very striking. In general, we might conclude that
+SJIA-PAP samples have slightly fewer neutrophils on average than control
+samples, but this seems largely driven by the outlier in the controls
+FOVs. To me, it looks like most of these differences are unreliable
+because of the low sample size. If you want to get into the realm of
+p-hacking, you could simply treat all the FOVs from a given patient as
+being entirely independent of one another (and I imagine that there are
+some studies that do this), but that’s not an approach that I could
+endorse.
 
 <div style="page-break-before: always;" />
 
-# Differential Abundance Analysis - within patients
+# 6. Differential Abundance Analysis - within patients
 
 In addition to the between-patients comparisons, we can also run another
 set of comparisons that leverages a within-subjects design to increase
@@ -704,7 +720,21 @@ one of the FOVs collected was annotated as a “healthy” section of tissue
 relative to the others (which had more of the hallmark histopathological
 features of SJIA-PAP). We can compare the abundance of each of our
 immune cell subpopulations within the same patients by comparing the
-“healthy” FOV to the other FOVs taken from the same patient.
+“healthy” FOV to the other FOVs taken from the same patient. In this
+case the GLMM we’re using is the following:
+
+$$
+logit(p\_{ij}) = log(\\frac{p\_{ij}}{1 - p\_{ij}}) = \\beta\_0 + \\alpha\_i + \\beta\_1 X\_{j\_{diseased}}, 
+$$
+where *X*<sub>*j*<sub>*d**i**s**e**a**s**e**d*</sub></sub> is an
+indicator variable representing if FOV j comes from a “diseased” area of
+the SJIA-PAP tissue or not (1 if yes; 0 otherwise). Thus,
+*β*<sub>1</sub> represents the difference in log-odds for a given cell
+subtype between the diseased and non-diseased FOVs within a given
+patients (controlling for patient-to-patient variability, which is
+represented by *α*<sub>*i*</sub>).
+
+## Processing
 
 ``` r
 # find patients who had at least one "healthy" FOV
@@ -719,12 +749,11 @@ interesting_patients
 
     ## [1] 16  8  9 11  1
 
-## Processing
-
 ``` r
+# filter only the patients with "healthy-looking" FOVs from the full dataset
 paired_patients <- 
   mibi_data %>% 
-  filter(patient_id %in% interesting_patients) %>% 
+  #filter(patient_id %in% interesting_patients) %>% 
   # annotate FOVs that are "healthy-looking" according to our pathologist
   mutate(
     fov_condition = 
@@ -737,7 +766,7 @@ paired_patients <-
 ``` r
 paired_daa_results <- 
   paired_patients %>% 
-  filter(outcome != "nonSJIA-PAP") %>% 
+  filter(outcome == "SJIA-PAP") %>% 
   pap_perform_daa(
     data_tibble = ., 
     sample_col = fov_id, 
@@ -759,34 +788,25 @@ paired_daa_results %>%
 | cluster\_id        |    p\_val |    p\_adj | significant |
 |:-------------------|----------:|----------:|:------------|
 | Bcell              | 0.0000000 | 0.0000000 | \*          |
-| Eosinophil         | 0.0000000 | 0.0000000 | \*          |
-| Lung\_Epithelium   | 0.0000000 | 0.0000000 | \*          |
-| Mesenchymal        | 0.0000001 | 0.0000005 | \*          |
-| CD14+\_Mono        | 0.0000008 | 0.0000025 | \*          |
-| Fibroblast         | 0.0000007 | 0.0000025 | \*          |
-| M2\_Mac            | 0.0022011 | 0.0056600 | \*          |
-| iNOS+\_Mac         | 0.0037262 | 0.0083839 | \*          |
-| Neutrophil         | 0.0102007 | 0.0204013 | \*          |
-| CD4+\_Tcell        | 0.1098600 | 0.1797709 |             |
-| Treg               | 0.1097409 | 0.1797709 |             |
-| Endothelial        | 0.1863928 | 0.2795892 |             |
-| Mast\_cell         | 0.2171053 | 0.3006073 |             |
-| CD209+\_Mac        | 0.2976274 | 0.3826638 |             |
-| CD8+\_Tcell        | 0.3671814 | 0.4130791 |             |
-| iNOS+\_Pneumocyte  | 0.3620723 | 0.4130791 |             |
-| CD57+\_ImmuneOther | 0.4157340 | 0.4401889 |             |
-| CD57+\_CD8+\_Tcell | 0.7218197 | 0.7218197 |             |
-| CD11c+\_mDC        |        NA |        NA | NA          |
-| CD16+\_ImmuneOther |        NA |        NA | NA          |
-
-``` r
-paired_daa_results %>% 
-  pluck("da_results_limma") %>% 
-  topTable(all = TRUE) %>% 
-  as_tibble() %>% 
-  mutate(significant = if_else(p_adj < 0.05, "*", "")) %>% 
-  arrange(p_adj)
-```
+| Neutrophil         | 0.0000000 | 0.0000000 | \*          |
+| CD4+\_Tcell        | 0.0000000 | 0.0000000 | \*          |
+| Fibroblast         | 0.0000000 | 0.0000000 | \*          |
+| M2\_Mac            | 0.0000052 | 0.0000206 | \*          |
+| Treg               | 0.0000354 | 0.0001181 | \*          |
+| Eosinophil         | 0.0000445 | 0.0001246 | \*          |
+| Lung\_Epithelium   | 0.0000498 | 0.0001246 | \*          |
+| Mast\_cell         | 0.0007133 | 0.0015851 | \*          |
+| CD209+\_Mac        | 0.0030874 | 0.0061748 | \*          |
+| CD57+\_CD8+\_Tcell | 0.0218511 | 0.0397293 | \*          |
+| CD57+\_ImmuneOther | 0.0258245 | 0.0397300 | \*          |
+| iNOS+\_Pneumocyte  | 0.0251787 | 0.0397300 | \*          |
+| iNOS+\_Mac         | 0.0420420 | 0.0600600 |             |
+| Endothelial        | 0.0630342 | 0.0840457 |             |
+| Mesenchymal        | 0.0711934 | 0.0889917 |             |
+| CD16+\_ImmuneOther | 0.3056815 | 0.3596253 |             |
+| CD8+\_Tcell        | 0.3353813 | 0.3726459 |             |
+| CD11c+\_mDC        | 0.9907574 | 0.9907574 |             |
+| CD14+\_Mono        | 0.9560004 | 0.9907574 |             |
 
 From these results, we can see that there are several immune cell
 subtypes that, when using a paired design, we find are enriched in parts
@@ -834,20 +854,19 @@ paired_plot_data <-
     total_fov_cells = sum(n),
     prop = n / total_fov_cells
   ) %>% 
-  ungroup() %>% 
-  group_by(fov_condition, patient_id, cluster_name) %>% 
-  summarize(
-    sd = sd(prop, na.rm = TRUE),
-    prop = mean(prop, na.rm = TRUE), 
-  ) %>% 
-  drop_na(cluster_name) %>% 
-  ungroup() %>% 
-  #mutate(across(c(patient_id, fov_condition), .f = as.factor)) %>% 
-  complete(patient_id, fov_condition, cluster_name, fill = list(prop = 0)) %>% 
-  left_join(num_fov_tibble) %>% 
-  mutate(
-    sem = sd / sqrt(num_fovs)
-  )
+  # ungroup() %>% 
+  # group_by(fov_condition, patient_id, cluster_name) %>% 
+  # summarize(
+  #   sd = sd(prop, na.rm = TRUE),
+  #   prop = mean(prop, na.rm = TRUE), 
+  # ) %>% 
+  # drop_na(cluster_name) %>% 
+  # ungroup() %>% 
+  complete(patient_id, fov_id, fov_condition, cluster_name, fill = list(prop = 0))
+  # left_join(num_fov_tibble) %>% 
+  # mutate(
+  #   sem = sd / sqrt(num_fovs)
+  # )
 ```
 
 ``` r
@@ -856,22 +875,25 @@ paired_plot_data %>%
   mutate(new_cluster_name = fct_reorder(new_cluster_name, p_adj)) %>%  
   drop_na(new_cluster_name) %>% 
   ggplot(aes(y = prop, x = fov_condition, fill = fov_condition)) + 
-  geom_line(aes(group = patient_id), color = "black") + 
-  geom_errorbar(
-    aes(x = fov_condition, y = prop, ymin = prop - sem, ymax = prop + sem),
-    width = 0.2, 
-    alpha = 0.7
-  ) +
-  geom_point(shape = 21) + 
-  #scale_y_continuous(oob = scales::oob_squish_infinite) + 
+  geom_violin(draw_quantiles = 0.5) + 
+  # geom_line(aes(group = patient_id), color = "black") + 
+  # geom_errorbar(
+  #   aes(x = fov_condition, y = prop, ymin = prop - sem, ymax = prop + sem),
+  #   width = 0.2, 
+  #   alpha = 0.7
+  # ) +
+  geom_jitter(shape = 21, size = 1.5, width = 0.03) + 
   facet_wrap(facets = vars(new_cluster_name), scales = "free", ncol = 4) + 
   labs(
+    subtitle = "Cluster proportions in healthy and diseased regions of SJIA-PAP lung", 
     x = NULL, 
-    y = "Proportion of cells"
+    y = "Proportion of cells", 
+    caption = "Cluster names with *'s indicate significance at p = 0.05;\n dots indicate individual FOVs", 
+    fill = NULL
   )
 ```
 
-![](sjia_pap_differential_discovery_files/figure-gfm/unnamed-chunk-27-1.png)<!-- -->
+![](sjia_pap_differential_discovery_files/figure-gfm/unnamed-chunk-22-1.png)<!-- -->
 
 ``` r
 paired_plot_data %>% 
@@ -903,26 +925,58 @@ paired_plot_data %>%
   geom_hline(yintercept = -log(0.05), color = "black", linetype = "dashed") + 
   geom_vline(xintercept = 0, color = "black", linetype = "dashed") +
   geom_point(shape = 21, size = 2.5) + 
-  ggrepel::geom_text_repel(aes(label = new_cluster_name), size = 2.5, color = "black") + 
+  ggrepel::geom_label_repel(
+    aes(label = str_replace_all(new_cluster_name, "_", " ")), 
+    size = 2.5, 
+    color = "black", 
+    show.legend = FALSE
+  ) + 
+  scale_y_continuous(limits = c(NA, 20), oob = scales::oob_squish_any) + 
   labs(
-    subtitle = "Differentially abundant clusters in diseased vs. non-diseased regions of paired SJIA-PAP samples", 
+    subtitle = "Differentially abundant clusters in diseased vs. non-diseased regions of SJIA-PAP lung", 
     x = "log2FC", 
     y = "-log(p-value)",
-    fill = NULL
+    fill = NULL, 
+    caption = "Increased/decreased refer to abundance of clusters in\ndiseased regions relative to healthy regions of lung tissue"
   )
 ```
 
-![](sjia_pap_differential_discovery_files/figure-gfm/unnamed-chunk-28-1.png)<!-- -->
+![](sjia_pap_differential_discovery_files/figure-gfm/unnamed-chunk-23-1.png)<!-- -->
 
 <div style="page-break-before: always;" />
 
-# Differential Expression Analysis - between patients
+# 7. Differential Expression Analysis - between patients
 
-\[Blurb about how we’re doing the same as the between-patients design
-above, but this time using a LMM to predict median marker expression for
-each cluster\]
+We can use a similar procedure as above to test for differences in mean
+marker expression across clusters by fitting a linear regression model
+(thus, an LMM, not a GLMM) for each cluster/marker pair. For this, we
+implicitly assume the that mean marker expression values in each cluster
+are distributed normally among patients (which is a large assumption
+even though this method is state-of-the-art in the cytometry community).
+Thus, for differential marker expression, we use the following equation
+to predict the mean expression value *y*<sub>*i**j*</sub> for a given
+cluster/marker pair in patient **i** and sample **j**:
+
+*y*<sub>*i**j*</sub> = *β*<sub>0</sub> + *α*<sub>*i*</sub> + *β*<sub>1</sub>*X*<sub>*j*</sub>,
+
+where each of the variables on the right-hand side of the equation are
+defined as in section 5. Due to our small sample size, we use the
+[{{limma}}](https://academic.oup.com/nar/article/43/7/e47/2414268)
+package’s parametric empirical Bayes method of estimating the variance
+for each marker being analyzed - this method allows for the sharing of
+variability information across all markers (and thereby an increase in
+statistical power in rarer cell types and less highly-expressed
+markers).
+
+Thus, a linear model can be fit for each marker-cluster pair across all
+FOVs, and the significance of *β*<sub>1</sub> can be tested to indicate
+the effect of the `outcome` variable on marker expression in a given
+cluster.
 
 ## PAP vs. non-PAP
+
+We perform the same comparisons in the same order as in section 5
+starting with all PAP vs. non-PAP samples:
 
 ``` r
 pap_dea <- 
@@ -976,13 +1030,18 @@ pap_dea$de_results %>%
 | CD8+\_Tcell | pan\_ck      | 0.0035863 | 0.1300399 |              |
 | Bcell       | cd8          | 0.0041655 | 0.1321142 |              |
 
+From these results, we can see that most markers that are differentially
+expressed are in different kinds of T-cells and Neutrophils (with mast
+cells and M2 macrophages having 1 differentially expressed marker each).
+
 ## SJIA-PAP vs. Controls
+
+Now we compare SJIA-PAP samples to control samples:
 
 ``` r
 dea_sjia_pap_vs_controls <- 
   mibi_data %>% 
   select(fov_id, cluster_name, outcome, patient_id, any_of(functional_markers)) %>%
-  #filter(!(fov_id %in% healthy_fovs_in_pap_patients)) %>% 
   filter(outcome != "nonSJIA-PAP") %>% 
   pap_perform_dea(
     data_tibble = ., 
@@ -1030,13 +1089,17 @@ dea_sjia_pap_vs_controls$de_results %>%
 | CD11c+\_mDC | h3k27me3     | 0.0060519 | 0.2017299 |              |
 | M2\_Mac     | cd31         | 0.0069729 | 0.2147075 |              |
 
+As above, we can see that most marker differences occur in different
+kinds of T-cells and neutrophils.
+
 ## SJIA-PAP vs. nonSJIA-PAP
+
+Next, we compare SJIA-PAP and nonSJIA-PAP samples:
 
 ``` r
 dea_sjia_pap_vs_nonsjia_pap <- 
   mibi_data %>% 
   select(fov_id, cluster_name, outcome, patient_id, any_of(functional_markers)) %>%
-  #filter(!(fov_id %in% healthy_fovs_in_pap_patients)) %>% 
   filter(outcome != "Control") %>% 
   pap_perform_dea(
     data_tibble = ., 
@@ -1084,13 +1147,36 @@ dea_sjia_pap_vs_nonsjia_pap$de_results %>%
 | Mesenchymal       | hh3          | 0.0123219 | 0.2948396 |              |
 | M2\_Mac           | lag3         | 0.0110886 | 0.2948396 |              |
 
+These results are interesting, as they suggest that the immune cells in
+SJIA-PAP and nonSJIA-PAP samples don’t differ much in marker expression.
+Rather, it seems that mesenchymal cells and pneumocytes themselves
+differ in the `Lag3` protein, suggesting that Lag3 may be important for
+SJIA-PAP biology.
+
+``` r
+mibi_data %>% 
+  group_by(fov_id, cluster_name, outcome) %>% 
+  summarize(lag3 = mean(lag3)) %>% 
+  filter(
+    cluster_name %in% c("Mesenchymal", "iNOS+_Pneumocyte"), 
+    str_detect(outcome, "PAP")
+  ) %>% 
+  ggplot(aes(x = outcome, y = lag3, fill = outcome)) + 
+  geom_violin(draw_quantiles = 0.5) + 
+  geom_point(shape = 21) + 
+  facet_wrap(vars(cluster_name), scales = "free")
+```
+
+![](sjia_pap_differential_discovery_files/figure-gfm/unnamed-chunk-27-1.png)<!-- -->
+
 ## nonSJIA-PAP vs. Controls
+
+Next, we compare nonSJIA-PAP vs. control samples:
 
 ``` r
 dea_control_vs_nonsjia_pap <- 
   mibi_data %>% 
   select(fov_id, cluster_name, outcome, patient_id, any_of(functional_markers)) %>%
-  #filter(!(fov_id %in% healthy_fovs_in_pap_patients)) %>% 
   filter(outcome != "SJIA-PAP") %>% 
   pap_perform_dea(
     data_tibble = ., 
@@ -1138,7 +1224,14 @@ dea_control_vs_nonsjia_pap$de_results %>%
 | M2\_Mac     | vim           | 0.0080806 | 0.1292888 |              |
 | Neutrophil  | vim           | 0.0077610 | 0.1292888 |              |
 
+And from these results, we can see that neutrophils, T-cells, and
+Macrophages tend to have differentially expressed markers (whereas other
+cell populations don’t).
+
 ## Visualization
+
+In our visualizations, we focus on the differences that we saw between
+SJIA-PAP and control samples.
 
 ``` r
 dea_sjia_pap_vs_control_results <- 
@@ -1152,16 +1245,22 @@ dea_sjia_pap_vs_control_results <-
 # number of significantly different markers in each cluster
 dea_sjia_pap_vs_control_results %>% 
   filter(significance == "*") %>% 
-  count(cluster_name)
+  count(cluster_name) %>% 
+  knitr::kable()
 ```
 
-    ## # A tibble: 4 x 2
-    ##   cluster_name     n
-    ##   <fct>        <int>
-    ## 1 CD4+_Tcell       2
-    ## 2 CD8+_Tcell       7
-    ## 3 Neutrophil       3
-    ## 4 Treg             1
+| cluster\_name |   n |
+|:--------------|----:|
+| CD4+\_Tcell   |   2 |
+| CD8+\_Tcell   |   7 |
+| Neutrophil    |   3 |
+| Treg          |   1 |
+
+As noted above, we can see that T-cells and Neutrophils have the
+significant marker differences.
+
+We can also make some volcano plots to summarize the different
+cluster-marker differences and their statistical significance:
 
 ``` r
 feature_volcano_tibble <- 
@@ -1226,11 +1325,57 @@ feature_volcano_tibble %>%
   )
 ```
 
-![](sjia_pap_differential_discovery_files/figure-gfm/unnamed-chunk-34-1.png)<!-- -->
+![](sjia_pap_differential_discovery_files/figure-gfm/unnamed-chunk-30-1.png)<!-- -->
+
+Or the same plot, but only in clusters where there were significant
+results:
+
+``` r
+important_clusters <- 
+  dea_sjia_pap_vs_control_results %>% 
+  filter(significance == "*") %>% 
+  count(cluster_name) %>% 
+  pull(cluster_name) %>% 
+  as.character()
+
+feature_volcano_tibble %>% 
+  filter(cluster_name %in% important_clusters) %>% 
+  ggplot(aes(x = log2_fc, y = neg_log_p_val, fill = feature_type)) + 
+  geom_hline(yintercept = -log(0.05), color = "black", linetype = "dashed") + 
+  geom_vline(xintercept = 0, color = "black", linetype = "dashed") +
+  geom_point(shape = 21, size = 2.5) + 
+  ggrepel::geom_label_repel(
+    aes(label = marker_id), 
+    data = filter(feature_volcano_tibble, feature_type != "Not significant"), 
+    size = 2.5, 
+    color = "black", 
+    show.legend = FALSE 
+  ) + 
+  scale_x_continuous(oob = scales::oob_squish_infinite) + 
+  scale_y_continuous(oob = scales::oob_squish_infinite) + 
+  facet_wrap(facets = vars(cluster_name), ncol = 2) + 
+  labs(
+    subtitle = "Differentially expressed markers in SJIA-PAP vs. control samples", 
+    x = "log2FC", 
+    y = "-log(p-value)",
+    fill = NULL
+  )
+```
+
+![](sjia_pap_differential_discovery_files/figure-gfm/unnamed-chunk-31-1.png)<!-- -->
 
 <div style="page-break-before: always;" />
 
-# Differential Expression Analysis - within patients
+# 8. Differential Expression Analysis - within patients
+
+As above, we can compare healthy-looking and diseased-looking sections
+of the same SJIA-PAP patient samples using a linear model similar to
+that used in section 7:
+
+*y*<sub>*i**j*</sub> = *β*<sub>0</sub> + *α*<sub>*i*</sub> + *β*<sub>1</sub>*X*<sub>*j*<sub>*d**i**s**e**a**s**e**d*</sub></sub>,
+
+where all the parameters on the right-hand side of the equation are
+defined as in section 6.
 
 ``` r
 paired_dea_results <- 
@@ -1262,55 +1407,258 @@ paired_dea_results %>%
   knitr::kable()
 ```
 
-| cluster\_id       | marker\_id |    p\_val |    p\_adj | significant |
-|:------------------|:-----------|----------:|----------:|:------------|
-| Eosinophil        | cd31       | 0.0000922 | 0.0313411 | \*          |
-| CD209+\_Mac       | ho\_1      | 0.0000870 | 0.0313411 | \*          |
-| Eosinophil        | hh3        | 0.0002986 | 0.0676921 | \*          |
-| Eosinophil        | vim        | 0.0008043 | 0.1367321 |             |
-| Eosinophil        | pan\_ck    | 0.0010167 | 0.1382757 |             |
-| CD14+\_Mono       | hh3        | 0.0024189 | 0.2741378 |             |
-| Mesenchymal       | cd45ro     | 0.0031148 | 0.3025807 |             |
-| iNOS+\_Pneumocyte | cd45ro     | 0.0044107 | 0.3749120 |             |
-| M2\_Mac           | cd45ro     | 0.0052723 | 0.3983509 |             |
-| Bcell             | cd31       | 0.0089437 | 0.4933762 |             |
-| Eosinophil        | cd45ro     | 0.0089218 | 0.4933762 |             |
-| Mast\_cell        | cd45ro     | 0.0074826 | 0.4933762 |             |
-| CD8+\_Tcell       | hh3        | 0.0094322 | 0.4933762 |             |
-| CD4+\_Tcell       | cd45ro     | 0.0132830 | 0.6021623 |             |
-| Neutrophil        | cd45ro     | 0.0132431 | 0.6021623 |             |
-| CD8+\_Tcell       | cd45ro     | 0.0173989 | 0.6262957 |             |
-| Treg              | hh3        | 0.0163440 | 0.6262957 |             |
-| Neutrophil        | lag3       | 0.0153198 | 0.6262957 |             |
-| Endothelial       | pan\_ck    | 0.0184205 | 0.6262957 |             |
-| iNOS+\_Mac        | pan\_ck    | 0.0179964 | 0.6262957 |             |
-| CD14+\_Mono       | sma        | 0.0211224 | 0.6839636 |             |
-| Neutrophil        | cd123      | 0.0315969 | 0.7036612 |             |
-| CD209+\_Mac       | cd14       | 0.0254273 | 0.7036612 |             |
-| CD14+\_Mono       | cd31       | 0.0295660 | 0.7036612 |             |
-| CD4+\_Tcell       | cd31       | 0.0320787 | 0.7036612 |             |
+| cluster\_id        | marker\_id |    p\_val |    p\_adj | significant |
+|:-------------------|:-----------|----------:|----------:|:------------|
+| CD16+\_ImmuneOther | cd3        | 0.0000689 | 0.0130851 | \*          |
+| CD16+\_ImmuneOther | cd8        | 0.0000398 | 0.0130851 | \*          |
+| Bcell              | hh3        | 0.0000268 | 0.0130851 | \*          |
+| Bcell              | vim        | 0.0000582 | 0.0130851 | \*          |
+| CD14+\_Mono        | hh3        | 0.0002310 | 0.0311634 | \*          |
+| Treg               | hh3        | 0.0002460 | 0.0311634 | \*          |
+| Endothelial        | grz\_b     | 0.0003847 | 0.0417700 | \*          |
+| Lung\_Epithelium   | hh3        | 0.0006255 | 0.0594213 | \*          |
+| Bcell              | cd31       | 0.0007525 | 0.0635421 | \*          |
+| Bcell              | cd45ro     | 0.0031191 | 0.2370492 |             |
+| CD4+\_Tcell        | hh3        | 0.0047125 | 0.3255918 |             |
+| Treg               | cd31       | 0.0063216 | 0.4003656 |             |
+| Bcell              | cd4        | 0.0088245 | 0.5158944 |             |
+| CD14+\_Mono        | cd45ro     | 0.0121318 | 0.6585829 |             |
+| Bcell              | pan\_ck    | 0.0185000 | 0.9373321 |             |
+| Bcell              | cd11c      | 0.0571145 | 1.0000000 |             |
+| CD14+\_Mono        | cd11c      | 0.4888098 | 1.0000000 |             |
+| CD16+\_ImmuneOther | cd11c      | 0.6317225 | 1.0000000 |             |
+| CD209+\_Mac        | cd11c      | 0.5326443 | 1.0000000 |             |
+| CD4+\_Tcell        | cd11c      | 0.2568826 | 1.0000000 |             |
+| CD57+\_CD8+\_Tcell | cd11c      | 0.9002267 | 1.0000000 |             |
+| CD57+\_ImmuneOther | cd11c      | 0.6609386 | 1.0000000 |             |
+| CD8+\_Tcell        | cd11c      | 0.2117023 | 1.0000000 |             |
+| Endothelial        | cd11c      | 0.3417841 | 1.0000000 |             |
+| Eosinophil         | cd11c      | 0.9351537 | 1.0000000 |             |
 
-``` eval
-paired_dea_results_2 <- 
-  testDS_LMM(
-    d_counts = calcCounts(paired_dea_results$data_diff), 
-    d_medians = calcMedians(paired_dea_results$data_diff), 
-    formula = paired_dea_results$my_formula, 
-    contrast = paired_dea_results$my_contrast, 
-    min_cells = 10, 
-    min_samples = 5, 
-    markers_to_test = rep(TRUE, nrow(paired_dea_results$marker_info))
-  )
-
-paired_dea_results_2 %>% 
-  topTable(all = TRUE) %>% 
-  as_tibble() %>% 
-  mutate(significant = if_else(p_adj < 0.10, "*", "")) %>% 
-  arrange(p_adj)
-```
+In this analysis, we see that CD16+ cells, B-cells, monocytes, T-regs,
+and the lung endothelium and epithelium themselves differe in the
+expression of several markers.
 
 <div style="page-break-before: always;" />
 
-# Spatial Analysis
+# 9. Spatial Analysis
 
-\[surfactant analysis\]
+Within FOVs, we can also annotate individual cells depending on whether
+they overlap with surfactant/lipid plaques and use these annotations to
+compare cell types that interact with surfactant and those that don’t.
+To do so, we can use a similar GLMM as above:
+
+\[Write out GLMM\]
+
+## Annotate cells
+
+``` r
+mibi_data <- 
+  mibi_data %>% 
+  mutate(fov_id = as.character(fov_id)) %>% 
+  left_join(surf_data, by = c("fov_id", "centroid_x" = "x", "centroid_y" = "y")) %>% 
+  rename(surfactant = values) %>% 
+  mutate(surfactant = replace_na(surfactant, "no surfactant"))
+```
+
+``` r
+# count how many cells are associated with surfactant in the entire dataset
+mibi_data %>% 
+  count(surfactant)
+```
+
+    ## # A tibble: 2 x 2
+    ##   surfactant        n
+    ##   <chr>         <int>
+    ## 1 no surfactant 65161
+    ## 2 surfactant    13895
+
+## DAA
+
+``` r
+surf_daa_results <-
+  mibi_data %>% 
+  filter(outcome == "SJIA-PAP") %>% 
+  mutate(sample_id = str_c(fov_id, surfactant)) %>% 
+  pap_perform_daa(
+    sample_col = sample_id, 
+    cluster_col = cluster_name, 
+    fixed_effect_cols = surfactant, 
+    random_effect_cols = patient_id, 
+    include_observation_level_random_effects = FALSE, 
+    min_cells = 3, 
+    min_samples = 5
+  )
+
+surf_daa_results <- 
+  surf_daa_results %>% 
+  pluck("da_results") %>% 
+  topTable(all = TRUE) %>% 
+  as_tibble() %>% 
+  mutate(significant = if_else(p_adj < 0.05, "*", "")) %>% 
+  arrange(p_adj)
+
+surf_daa_results %>% 
+  knitr::kable()
+```
+
+| cluster\_id        |    p\_val |    p\_adj | significant |
+|:-------------------|----------:|----------:|:------------|
+| Bcell              | 0.0000000 | 0.0000000 | \*          |
+| CD4+\_Tcell        | 0.0000000 | 0.0000000 | \*          |
+| CD14+\_Mono        | 0.0000000 | 0.0000000 | \*          |
+| Eosinophil         | 0.0000000 | 0.0000000 | \*          |
+| Endothelial        | 0.0000438 | 0.0001753 | \*          |
+| CD209+\_Mac        | 0.0001663 | 0.0005543 | \*          |
+| Neutrophil         | 0.0011513 | 0.0032894 | \*          |
+| M2\_Mac            | 0.0093387 | 0.0233466 | \*          |
+| Fibroblast         | 0.0300237 | 0.0604102 |             |
+| Treg               | 0.0302051 | 0.0604102 |             |
+| CD57+\_ImmuneOther | 0.0435328 | 0.0791506 |             |
+| CD8+\_Tcell        | 0.0847449 | 0.1412415 |             |
+| CD57+\_CD8+\_Tcell | 0.1249054 | 0.1921621 |             |
+| iNOS+\_Mac         | 0.1543959 | 0.2205656 |             |
+| Mesenchymal        | 0.2176455 | 0.2901939 |             |
+| Lung\_Epithelium   | 0.2439831 | 0.3049788 |             |
+| iNOS+\_Pneumocyte  | 0.3890947 | 0.4577584 |             |
+| Mast\_cell         | 0.5190599 | 0.5767332 |             |
+| CD11c+\_mDC        | 0.9718087 | 0.9815762 |             |
+| CD16+\_ImmuneOther | 0.9815762 | 0.9815762 |             |
+
+``` r
+mibi_data %>% 
+  filter(outcome == "SJIA-PAP") %>% 
+  mutate(sample_id = str_c(fov_id, surfactant)) %>% 
+  count(patient_id, fov_id, cluster_name, surfactant) %>% 
+  group_by(patient_id, fov_id, surfactant) %>% 
+  mutate(prop = n / sum(n)) %>% 
+  ungroup() %>% 
+  select(-n) %>% 
+  pivot_wider(
+    names_from = surfactant, 
+    values_from = prop, 
+    values_fill = 0
+  ) %>% 
+  left_join(surf_daa_results, by = c("cluster_name" = "cluster_id")) %>% 
+  mutate(
+    fc = surfactant / `no surfactant`, 
+  ) %>%
+  group_by(cluster_name) %>% 
+  summarize(
+    fc = mean(fc, na.rm = TRUE), 
+    p_adj = mean(p_adj, na.rm = TRUE), 
+    cluster_type = 
+      case_when(
+        p_adj > 0.05 ~ "Not significant", 
+        fc < 1       ~ "Decreased", 
+        fc > 1       ~ "Increased"
+      )
+  ) %>%
+  mutate(
+    log2_fc = log(fc, base = 2), 
+    neg_log_10_p = -log(p_adj)
+  ) %>% 
+  #mutate(cluster_name = fct_reorder(cluster_name, neg_log_10_p)) %>% 
+  ggplot(aes(y = neg_log_10_p, x = log2_fc, fill = cluster_type)) + 
+  geom_hline(yintercept = -log(0.05), color = "black", linetype = "dashed") + 
+  geom_vline(xintercept = 0, color = "black", linetype = "dashed") +
+  #geom_violin() + 
+  geom_point(shape = 21, size = 2) + 
+  ggrepel::geom_label_repel(
+    aes(label = str_replace_all(cluster_name, "_", " ")), 
+    size = 2, 
+    show.legend = FALSE
+  ) + 
+  scale_x_continuous(oob = scales::oob_squish_any) + 
+  scale_y_continuous(oob = scales::oob_squish_any) + 
+  labs(
+    subtitle = "Cell types increased/decreased in surfactant regions of SJIA-PAP lung", 
+    x = "log2FC", 
+    y = "log10 p-value", 
+    fill = NULL
+  )
+```
+
+![](sjia_pap_differential_discovery_files/figure-gfm/unnamed-chunk-36-1.png)<!-- -->
+
+## DEA
+
+``` r
+surf_dea_results <-
+  mibi_data %>% 
+  filter(outcome == "SJIA-PAP") %>%
+  mutate(sample_id = as.factor(str_c(fov_id, surfactant))) %>%
+  select(
+    sample_id,
+    cluster_name,
+    surfactant, 
+    patient_id, 
+    any_of(functional_markers)
+  ) %>%  
+  pap_perform_dea(
+    sample_col = sample_id, 
+    cluster_col = cluster_name, 
+    fixed_effect_cols = surfactant, 
+    random_effect_col = patient_id, 
+    min_cells = 10, 
+    min_samples = 5
+  )
+
+surf_dea_results %>% 
+  pluck("de_results") %>% 
+  topTable(top_n = 25) %>% 
+  as_tibble() %>% 
+  mutate(significant = if_else(p_adj < 0.05, "*", "")) %>% 
+  arrange(p_adj) %>% 
+  knitr::kable()
+```
+
+| cluster\_id        | marker\_id |    p\_val |   p\_adj | significant |
+|:-------------------|:-----------|----------:|---------:|:------------|
+| Eosinophil         | cd20       | 0.0000001 | 4.81e-05 | \*          |
+| Bcell              | cd11c      | 0.6648190 | 1.00e+00 |             |
+| CD11c+\_mDC        | cd11c      | 0.8676186 | 1.00e+00 |             |
+| CD14+\_Mono        | cd11c      | 0.8825588 | 1.00e+00 |             |
+| CD209+\_Mac        | cd11c      | 0.1733206 | 1.00e+00 |             |
+| CD4+\_Tcell        | cd11c      | 0.9002251 | 1.00e+00 |             |
+| CD57+\_CD8+\_Tcell | cd11c      | 0.9557545 | 1.00e+00 |             |
+| CD8+\_Tcell        | cd11c      | 0.1891992 | 1.00e+00 |             |
+| Endothelial        | cd11c      | 0.0653088 | 1.00e+00 |             |
+| Eosinophil         | cd11c      | 0.7990047 | 1.00e+00 |             |
+| Fibroblast         | cd11c      | 0.9897020 | 1.00e+00 |             |
+| iNOS+\_Mac         | cd11c      | 0.6641976 | 1.00e+00 |             |
+| iNOS+\_Pneumocyte  | cd11c      | 0.7603790 | 1.00e+00 |             |
+| Lung\_Epithelium   | cd11c      | 0.7070094 | 1.00e+00 |             |
+| M2\_Mac            | cd11c      | 0.6423576 | 1.00e+00 |             |
+| Mast\_cell         | cd11c      | 0.8533360 | 1.00e+00 |             |
+| Mesenchymal        | cd11c      | 0.7025854 | 1.00e+00 |             |
+| Neutrophil         | cd11c      | 0.8924247 | 1.00e+00 |             |
+| Treg               | cd11c      | 0.5131250 | 1.00e+00 |             |
+| Bcell              | cd123      | 0.7440588 | 1.00e+00 |             |
+| CD11c+\_mDC        | cd123      | 0.9156719 | 1.00e+00 |             |
+| CD14+\_Mono        | cd123      | 0.9566482 | 1.00e+00 |             |
+| CD209+\_Mac        | cd123      | 0.9449782 | 1.00e+00 |             |
+| CD4+\_Tcell        | cd123      | 0.6052043 | 1.00e+00 |             |
+| CD57+\_CD8+\_Tcell | cd123      | 0.9853360 | 1.00e+00 |             |
+
+We can see from this analysis that CD20 on Eosinophils is the only
+marker that is differentially expressed between cells within the same
+cluster that overlap with surfactant and those that don’t. This is
+probably not that surprising, given that associations between individual
+immune cells and surfactant is probably a relatively short-term
+interaction (and maybe not long enough to mediate any change in marker
+expression?). I think the more important result in this case is the
+association of certain clusters of immune cells with surfactant
+(i.e. the differential abundance analysis above).
+
+``` r
+mibi_data %>%
+  filter(cluster_name == "Eosinophil", outcome == "SJIA-PAP") %>%
+  group_by(fov_id,, patient_id, surfactant) %>%
+  summarize(cd20 = mean(cd20, na.rm = TRUE)) %>%
+  ggplot(aes(x = surfactant, y = cd20, fill = surfactant)) +
+  geom_violin() +
+  geom_point(shape = 21)
+```
+
+![](sjia_pap_differential_discovery_files/figure-gfm/unnamed-chunk-38-1.png)<!-- -->

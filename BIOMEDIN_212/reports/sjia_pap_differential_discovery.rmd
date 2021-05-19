@@ -1,8 +1,9 @@
 ---
 title: "Aim 1 Differential Discovery Analysis"
 output: 
+  github_document: 
+    toc: true
   pdf_document: default
-  github_document: default
 urlcolor: blue
 ---
 
@@ -962,9 +963,166 @@ In this analysis, we see that CD16+ cells, B-cells, monocytes, T-regs, and the l
 
 `r pagebreak()`
 
-# Spatial Analysis
+# 9. Spatial Analysis
 
-Within FOVs, we can also annotate individual cells depending on whether they overlap with surfactant/lipid plaques and use these annotations to 
+Within FOVs, we can also annotate individual cells depending on whether they overlap with surfactant/lipid plaques and use these annotations to compare cell types that interact with surfactant and those that don't. To do so, we can use a similar GLMM as above: 
+
+[Write out GLMM]
 
 ## Annotate cells
+
+
+```{r}
+mibi_data <- 
+  mibi_data %>% 
+  mutate(fov_id = as.character(fov_id)) %>% 
+  left_join(surf_data, by = c("fov_id", "centroid_x" = "x", "centroid_y" = "y")) %>% 
+  rename(surfactant = values) %>% 
+  mutate(surfactant = replace_na(surfactant, "no surfactant"))
+```
+
+
+
+```{r}
+# count how many cells are associated with surfactant in the entire dataset
+mibi_data %>% 
+  count(surfactant)
+```
+
+## DAA
+
+```{r}
+surf_daa_results <-
+  mibi_data %>% 
+  filter(outcome == "SJIA-PAP") %>% 
+  mutate(sample_id = str_c(fov_id, surfactant)) %>% 
+  pap_perform_daa(
+    sample_col = sample_id, 
+    cluster_col = cluster_name, 
+    fixed_effect_cols = surfactant, 
+    random_effect_cols = patient_id, 
+    include_observation_level_random_effects = FALSE, 
+    min_cells = 3, 
+    min_samples = 5
+  )
+
+surf_daa_results <- 
+  surf_daa_results %>% 
+  pluck("da_results") %>% 
+  topTable(all = TRUE) %>% 
+  as_tibble() %>% 
+  mutate(significant = if_else(p_adj < 0.05, "*", "")) %>% 
+  arrange(p_adj)
+
+surf_daa_results %>% 
+  knitr::kable()
+```
+
+```{r}
+mibi_data %>% 
+  filter(outcome == "SJIA-PAP") %>% 
+  mutate(sample_id = str_c(fov_id, surfactant)) %>% 
+  count(patient_id, fov_id, cluster_name, surfactant) %>% 
+  group_by(patient_id, fov_id, surfactant) %>% 
+  mutate(prop = n / sum(n)) %>% 
+  ungroup() %>% 
+  select(-n) %>% 
+  pivot_wider(
+    names_from = surfactant, 
+    values_from = prop, 
+    values_fill = 0
+  ) %>% 
+  left_join(surf_daa_results, by = c("cluster_name" = "cluster_id")) %>% 
+  mutate(
+    fc = surfactant / `no surfactant`, 
+  ) %>%
+  group_by(cluster_name) %>% 
+  summarize(
+    fc = mean(fc, na.rm = TRUE), 
+    p_adj = mean(p_adj, na.rm = TRUE), 
+    cluster_type = 
+      case_when(
+        p_adj > 0.05 ~ "Not significant", 
+        fc < 1       ~ "Decreased", 
+        fc > 1       ~ "Increased"
+      )
+  ) %>%
+  mutate(
+    log2_fc = log(fc, base = 2), 
+    neg_log_10_p = -log(p_adj)
+  ) %>% 
+  #mutate(cluster_name = fct_reorder(cluster_name, neg_log_10_p)) %>% 
+  ggplot(aes(y = neg_log_10_p, x = log2_fc, fill = cluster_type)) + 
+  geom_hline(yintercept = -log(0.05), color = "black", linetype = "dashed") + 
+  geom_vline(xintercept = 0, color = "black", linetype = "dashed") +
+  #geom_violin() + 
+  geom_point(shape = 21, size = 2) + 
+  ggrepel::geom_label_repel(
+    aes(label = str_replace_all(cluster_name, "_", " ")), 
+    size = 2, 
+    show.legend = FALSE
+  ) + 
+  scale_x_continuous(oob = scales::oob_squish_any) + 
+  scale_y_continuous(oob = scales::oob_squish_any) + 
+  labs(
+    subtitle = "Cell types increased/decreased in surfactant regions of SJIA-PAP lung", 
+    x = "log2FC", 
+    y = "log10 p-value", 
+    fill = NULL
+  )
+```
+
+
+
+## DEA
+
+```{r}
+surf_dea_results <-
+  mibi_data %>% 
+  filter(outcome == "SJIA-PAP") %>%
+  mutate(sample_id = as.factor(str_c(fov_id, surfactant))) %>%
+  select(
+    sample_id,
+    cluster_name,
+    surfactant, 
+    patient_id, 
+    any_of(functional_markers)
+  ) %>%  
+  pap_perform_dea(
+    sample_col = sample_id, 
+    cluster_col = cluster_name, 
+    fixed_effect_cols = surfactant, 
+    random_effect_col = patient_id, 
+    min_cells = 10, 
+    min_samples = 5
+  )
+
+surf_dea_results %>% 
+  pluck("de_results") %>% 
+  topTable(top_n = 25) %>% 
+  as_tibble() %>% 
+  mutate(significant = if_else(p_adj < 0.05, "*", "")) %>% 
+  arrange(p_adj) %>% 
+  knitr::kable()
+```
+We can see from this analysis that CD20 on Eosinophils is the only marker that is differentially expressed between cells within the same cluster that overlap with surfactant and those that don't. This is probably not that surprising, given that associations between individual immune cells and surfactant is probably a relatively short-term interaction (and maybe not long enough to mediate any change in marker expression?). I think the more important result in this case is the association of certain clusters of immune cells with surfactant (i.e. the differential abundance analysis above).  
+
+```{r}
+mibi_data %>%
+  filter(cluster_name == "Eosinophil", outcome == "SJIA-PAP") %>%
+  group_by(fov_id,, patient_id, surfactant) %>%
+  summarize(cd20 = mean(cd20, na.rm = TRUE)) %>%
+  ggplot(aes(x = surfactant, y = cd20, fill = surfactant)) +
+  geom_violin() +
+  geom_point(shape = 21)
+```
+
+
+
+
+
+
+
+
+
 

@@ -71,7 +71,7 @@ pap_perform_daa <-
     sample_colname <- 
       data_tibble %>% 
       select({{sample_col}}) %>% 
-      colnames() 
+      colnames()
     
     fixed_effect_colnames <- 
       data_tibble %>% 
