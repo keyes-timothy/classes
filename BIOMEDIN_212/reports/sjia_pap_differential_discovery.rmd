@@ -10,7 +10,7 @@ urlcolor: blue
 knitr::opts_chunk$set(echo = TRUE, dpi = 300, warning = FALSE, message = FALSE)
 ```
 
-# Setup
+# 1. Setup
 
 ```{r}
 # libraries
@@ -64,7 +64,7 @@ functional_markers <-
 
 `r pagebreak()`
 
-# Read in data
+# 2. Read in data
 
 ```{r}
 # metadata 
@@ -113,7 +113,7 @@ surf_data <-
 
 `r pagebreak()`
 
-# Pre-process data
+# 3. Pre-process data
 
 ```{r}
 # join the mibi single-cell data with the FOV metadata
@@ -212,7 +212,7 @@ mibi_data <-
 
 `r pagebreak()`
 
-# Basic data summary
+# 4. Basic data summary
 
 ## Number of unique FOVs in each condition
 
@@ -260,7 +260,7 @@ mibi_data %>%
 
 `r pagebreak()`
 
-# Differential Abundance Analysis - between patients
+# 5. Differential Abundance Analysis - between patients
 
 In Aim 1, we proposed a differential abundance analysis of different immune cell subtypes (represented by the column `cluster_name` in `mibi_data`) across different types of MIBI images. The first of these analyses is to compare the abundance of each immune cell subtype between independent patients, each of which has either SJIA-PAP, PAP caused by something other than SJIA (nonSJIA-PAP), pneumonia, or lung cancer (which we code as "Normal" in `mibi_data`). We combine the last two conditions into the "control" category because neither of them have PAP, so they make as much sense as any sample we have access to to form our basis of comparison. 
 
@@ -277,8 +277,8 @@ $$
 In the equation above, we use the following definitions:
 
 -   $p_{ij}$: The proportion of cells in a given cluster in patient *i* and FOV *j*
--   $\alpha_i$: A random intercept for each patient *i* in which $\alpha_i$ ~ $N(0, \sigma_p)$, where $\sigma_p$ is estimated during model fitting.
--   $X_{j}$: an indicator variable representing whether or not an FOV j was taken from an SJIA-PAP patient (1 if yes, 0 otherwise). Depending on which comparisons we're making, what $X_j$ stands for can change (but it always represents which `outcome` FOV j has been annotated with.
+-   $\alpha_i$: A random intercept for each patient *i* in which $\alpha_i$ ~ $N(0, \sigma)$, where $\sigma$ is estimated during model fitting.
+-   $X_{j}$: an indicator variable representing whether or not an FOV j was taken from an SJIA-PAP patient (1 if yes, 0 otherwise). Depending on which comparisons we're making, what $X_j$ stands for can change (but it always represents which `outcome` FOV j has been annotated with).
 -   All $\beta$'s are linear model parameters optimized during model fitting.
 
 Using the above setup, we can apply null-hypothesis significance testing to $\beta_1$ (under the null hypothesis that $\beta_1 = 0$): if $\beta_1$ is significantly different from 0 in the model, we can state that the proportion of cells in our cluster differs significantly between the levels of `outcome` we're investigating while controlling for individual-to-individual variation.
@@ -310,7 +310,7 @@ pap_daa$da_results %>%
 ```
 
 
-From these results, we can see that, when taking indivual random-effects into account, there are no statistically significant differentially abundance clusters between PAP and non-PAP samples (at least at the level of power we have available to us in this study). 
+From these results, we can see that, when taking individual random-effects into account, there are no statistically significant differentially abundant clusters between PAP and non-PAP samples (at least at the level of power we have available to us in this study). 
 
 ## SJIA-PAP vs. Controls
 
@@ -398,7 +398,6 @@ daa_control_vs_nonsjia_pap$da_results %>%
 And in this case we can see that there are several cell subtypes that are differentially abundant (pneumocytes, monocytes, endothelial cells, and iNOS+ Macrophages). 
 
 
-
 ## Visualization
 
 ```{r}
@@ -413,14 +412,20 @@ mibi_data %>%
     prop = n / total_cells
   ) %>% 
   filter(cluster_name %in% interesting_clusters) %>% 
+  #group_by(patient_id, cluster_name, outcome) %>% 
+  #summarize(prop = mean(prop)) %>% 
   ggplot(aes(x = outcome, y = prop, fill = outcome)) + 
   geom_violin(draw_quantiles = 0.5) + 
   geom_point(shape = 21, position = position_dodge(width = 0.3)) + 
   facet_wrap(facets = vars(cluster_name), scales = "free")
 ```
 
+From these plots, we can see that the differences between individual FOVS (even for these populations, which are the ones that came up in the analysis) are not very striking. In general, we might conclude that SJIA-PAP samples have slightly fewer neutrophils on average than control samples, but this seems largely driven by the outlier in the controls FOVs. To me, it looks like most of these differences are unreliable because of the low sample size. If you want to get into the realm of p-hacking, you could simply treat all the FOVs from a given patient as being entirely independent of one another (and I imagine that there are some studies that do this), but that's not an approach that I could endorse. 
 
-```{r}
+
+
+
+```{r, include = FALSE}
 mibi_data %>% 
   count(fov_id, cluster_name, patient_id, outcome) %>% 
   group_by(fov_id) %>% 
@@ -450,10 +455,17 @@ mibi_data %>%
 
 `r pagebreak()`
 
-# Differential Abundance Analysis - within patients
+# 6. Differential Abundance Analysis - within patients
 
-In addition to the between-patients comparisons, we can also run another set of comparisons that leverages a within-subjects design to increase statistical power. As it turns out, for several of our SJIA-PAP samples, one of the FOVs collected was annotated as a "healthy" section of tissue relative to the others (which had more of the hallmark histopathological features of SJIA-PAP). We can compare the abundance of each of our immune cell subpopulations within the same patients by comparing the "healthy" FOV to the other FOVs taken from the same patient. 
+In addition to the between-patients comparisons, we can also run another set of comparisons that leverages a within-subjects design to increase statistical power. As it turns out, for several of our SJIA-PAP samples, one of the FOVs collected was annotated as a "healthy" section of tissue relative to the others (which had more of the hallmark histopathological features of SJIA-PAP). We can compare the abundance of each of our immune cell subpopulations within the same patients by comparing the "healthy" FOV to the other FOVs taken from the same patient. In this case the GLMM we're using is the following: 
 
+
+$$
+logit(p_{ij}) = log(\frac{p_{ij}}{1 - p_{ij}}) = \beta_0 + \alpha_i + \beta_1 X_{j_{diseased}}, 
+$$
+where $X_{j_{diseased}}$ is an indicator variable representing if FOV j comes from a "diseased" area of the SJIA-PAP tissue or not (1 if yes; 0 otherwise). Thus, $\beta_1$ represents the difference in log-odds for a given cell subtype between the diseased and non-diseased FOVs within a given patients (controlling for patient-to-patient variability, which is represented by $\alpha_i$).  
+
+## Processing
 
 ```{r}
 # find patients who had at least one "healthy" FOV
@@ -464,14 +476,14 @@ interesting_patients <-
   pull(patient_id)
 
 interesting_patients
+
 ```
 
-## Processing 
-
 ```{r}
+# filter only the patients with "healthy-looking" FOVs from the full dataset
 paired_patients <- 
   mibi_data %>% 
-  filter(patient_id %in% interesting_patients) %>% 
+  #filter(patient_id %in% interesting_patients) %>% 
   # annotate FOVs that are "healthy-looking" according to our pathologist
   mutate(
     fov_condition = 
@@ -485,7 +497,7 @@ paired_patients <-
 ```{r, message = FALSE, warning = FALSE}
 paired_daa_results <- 
   paired_patients %>% 
-  filter(outcome != "nonSJIA-PAP") %>% 
+  filter(outcome == "SJIA-PAP") %>% 
   pap_perform_daa(
     data_tibble = ., 
     sample_col = fov_id, 
@@ -503,7 +515,6 @@ paired_daa_results %>%
   arrange(p_adj) %>%  
   knitr::kable()
 ```
-
 
 
 From these results, we can see that there are several immune cell subtypes that, when using a paired design, we find are enriched in parts of the SJIA-PAP lung that actually show histopathological signs of disease compared to paired parts of the SJIA-PAP lung that do not show histopathological signs of disease.
@@ -548,40 +559,44 @@ paired_plot_data <-
     total_fov_cells = sum(n),
     prop = n / total_fov_cells
   ) %>% 
-  ungroup() %>% 
-  group_by(fov_condition, patient_id, cluster_name) %>% 
-  summarize(
-    sd = sd(prop, na.rm = TRUE),
-    prop = mean(prop, na.rm = TRUE), 
-  ) %>% 
-  drop_na(cluster_name) %>% 
-  ungroup() %>% 
-  complete(patient_id, fov_condition, cluster_name, fill = list(prop = 0)) %>% 
-  left_join(num_fov_tibble) %>% 
-  mutate(
-    sem = sd / sqrt(num_fovs)
-  )
+  # ungroup() %>% 
+  # group_by(fov_condition, patient_id, cluster_name) %>% 
+  # summarize(
+  #   sd = sd(prop, na.rm = TRUE),
+  #   prop = mean(prop, na.rm = TRUE), 
+  # ) %>% 
+  # drop_na(cluster_name) %>% 
+  # ungroup() %>% 
+  complete(patient_id, fov_id, fov_condition, cluster_name, fill = list(prop = 0))
+  # left_join(num_fov_tibble) %>% 
+  # mutate(
+  #   sem = sd / sqrt(num_fovs)
+  # )
 
 ```
 
 
-```{r, fig.height = 8, fig.width = 9}
+```{r, fig.height = 8, fig.width = 9, message = FALSE, warning = FALSE}
 paired_plot_data %>% 
   left_join(paired_p_values) %>% 
   mutate(new_cluster_name = fct_reorder(new_cluster_name, p_adj)) %>%  
   drop_na(new_cluster_name) %>% 
   ggplot(aes(y = prop, x = fov_condition, fill = fov_condition)) + 
-  geom_line(aes(group = patient_id), color = "black") + 
-  geom_errorbar(
-    aes(x = fov_condition, y = prop, ymin = prop - sem, ymax = prop + sem),
-    width = 0.2, 
-    alpha = 0.7
-  ) +
-  geom_point(shape = 21) + 
+  geom_violin(draw_quantiles = 0.5) + 
+  # geom_line(aes(group = patient_id), color = "black") + 
+  # geom_errorbar(
+  #   aes(x = fov_condition, y = prop, ymin = prop - sem, ymax = prop + sem),
+  #   width = 0.2, 
+  #   alpha = 0.7
+  # ) +
+  geom_jitter(shape = 21, size = 1.5, width = 0.03) + 
   facet_wrap(facets = vars(new_cluster_name), scales = "free", ncol = 4) + 
   labs(
+    subtitle = "Cluster proportions in healthy and diseased regions of SJIA-PAP lung", 
     x = NULL, 
-    y = "Proportion of cells"
+    y = "Proportion of cells", 
+    caption = "Cluster names with *'s indicate significance at p = 0.05;\n dots indicate individual FOVs", 
+    fill = NULL
   )
 ```
 
@@ -615,23 +630,40 @@ paired_plot_data %>%
   geom_hline(yintercept = -log(0.05), color = "black", linetype = "dashed") + 
   geom_vline(xintercept = 0, color = "black", linetype = "dashed") +
   geom_point(shape = 21, size = 2.5) + 
-  ggrepel::geom_text_repel(aes(label = new_cluster_name), size = 2.5, color = "black") + 
+  ggrepel::geom_label_repel(
+    aes(label = str_replace_all(new_cluster_name, "_", " ")), 
+    size = 2.5, 
+    color = "black", 
+    show.legend = FALSE
+  ) + 
+  scale_y_continuous(limits = c(NA, 20), oob = scales::oob_squish_any) + 
   labs(
-    subtitle = "Differentially abundant clusters in diseased vs. non-diseased regions of paired SJIA-PAP samples", 
+    subtitle = "Differentially abundant clusters in diseased vs. non-diseased regions of SJIA-PAP lung", 
     x = "log2FC", 
     y = "-log(p-value)",
-    fill = NULL
+    fill = NULL, 
+    caption = "Increased/decreased refer to abundance of clusters in\ndiseased regions relative to healthy regions of lung tissue"
   )
 
 ```
 
 `r pagebreak()`
 
-# Differential Expression Analysis - between patients
+# 7. Differential Expression Analysis - between patients
 
-[Blurb about how we're doing the same as the between-patients design above, but this time using a LMM to predict median marker expression for each cluster]
+We can use a similar procedure as above to test for differences in mean marker expression across clusters by fitting a linear regression model (thus, an LMM, not a GLMM) for each cluster/marker pair. For this, we implicitly assume the that mean marker expression values in each cluster are distributed normally among patients (which is a large assumption even though this method is state-of-the-art in the cytometry community). Thus, for differential marker expression, we use the following equation to predict the mean expression value $y_{ij}$ for a given cluster/marker pair in patient **i** and sample **j**:
+
+$$ 
+y_{ij} = \beta_0 + \alpha_i + \beta_1 X_{j},
+$$
+
+where each of the variables on the right-hand side of the equation are defined as in section 5. Due to our small sample size, we use the [{{limma}}](https://academic.oup.com/nar/article/43/7/e47/2414268) package's parametric empirical Bayes method of estimating the variance for each marker being analyzed - this method allows for the sharing of variability information across all markers (and thereby an increase in statistical power in rarer cell types and less highly-expressed markers).
+
+Thus, a linear model can be fit for each marker-cluster pair across all FOVs, and the significance of $\beta_1$ can be tested to indicate the effect of the `outcome` variable on marker expression in a given cluster. 
 
 ## PAP vs. non-PAP 
+
+We perform the same comparisons in the same order as in section 5 starting with all PAP vs. non-PAP samples: 
 
 ```{r}
 pap_dea <- 
@@ -657,7 +689,11 @@ pap_dea$de_results %>%
   knitr::kable()
 ```
 
+From these results, we can see that most markers that are differentially expressed are in different kinds of T-cells and Neutrophils (with mast cells and M2 macrophages having 1 differentially expressed marker each).
+
 ## SJIA-PAP vs. Controls
+
+Now we compare SJIA-PAP samples to control samples:
 
 ```{r}
 dea_sjia_pap_vs_controls <- 
@@ -682,8 +718,11 @@ dea_sjia_pap_vs_controls$de_results %>%
   knitr::kable()
 ```
 
+As above, we can see that most marker differences occur in different kinds of T-cells and neutrophils. 
 
 ## SJIA-PAP vs. nonSJIA-PAP
+
+Next, we compare SJIA-PAP and nonSJIA-PAP samples: 
 
 ```{r}
 dea_sjia_pap_vs_nonsjia_pap <- 
@@ -708,7 +747,25 @@ dea_sjia_pap_vs_nonsjia_pap$de_results %>%
   knitr::kable()
 ```
 
+These results are interesting, as they suggest that the immune cells in SJIA-PAP and nonSJIA-PAP samples don't differ much in marker expression. Rather, it seems that mesenchymal cells and pneumocytes themselves differ in the `Lag3` protein, suggesting that Lag3 may be important for SJIA-PAP biology. 
+
+```{r}
+mibi_data %>% 
+  group_by(fov_id, cluster_name, outcome) %>% 
+  summarize(lag3 = mean(lag3)) %>% 
+  filter(
+    cluster_name %in% c("Mesenchymal", "iNOS+_Pneumocyte"), 
+    str_detect(outcome, "PAP")
+  ) %>% 
+  ggplot(aes(x = outcome, y = lag3, fill = outcome)) + 
+  geom_violin(draw_quantiles = 0.5) + 
+  geom_point(shape = 21) + 
+  facet_wrap(vars(cluster_name), scales = "free")
+```
+
 ## nonSJIA-PAP vs. Controls
+
+Next, we compare nonSJIA-PAP vs. control samples: 
 
 ```{r}
 dea_control_vs_nonsjia_pap <- 
@@ -733,7 +790,11 @@ dea_control_vs_nonsjia_pap$de_results %>%
   knitr::kable()
 ```
 
+And from these results, we can see that neutrophils, T-cells, and Macrophages tend to have differentially expressed markers (whereas other cell populations don't). 
+
 ## Visualization
+
+In our visualizations, we focus on the differences that we saw between SJIA-PAP and control samples. 
 
 ```{r}
 dea_sjia_pap_vs_control_results <- 
@@ -751,8 +812,11 @@ dea_sjia_pap_vs_control_results %>%
   knitr::kable()
 ```
 
+As noted above, we can see that T-cells and Neutrophils have the significant marker differences. 
 
-```{r, fig.height = 10}
+We can also make some volcano plots to summarize the different cluster-marker differences and their statistical significance: 
+
+```{r, fig.height = 10, warning = FALSE, message = FALSE}
 feature_volcano_tibble <- 
   mibi_data %>% 
   filter(outcome != "nonSJIA-PAP") %>% 
@@ -815,9 +879,53 @@ feature_volcano_tibble %>%
   )
 ```
 
+Or the same plot, but only in clusters where there were significant results: 
+
+```{r}
+important_clusters <- 
+  dea_sjia_pap_vs_control_results %>% 
+  filter(significance == "*") %>% 
+  count(cluster_name) %>% 
+  pull(cluster_name) %>% 
+  as.character()
+
+feature_volcano_tibble %>% 
+  filter(cluster_name %in% important_clusters) %>% 
+  ggplot(aes(x = log2_fc, y = neg_log_p_val, fill = feature_type)) + 
+  geom_hline(yintercept = -log(0.05), color = "black", linetype = "dashed") + 
+  geom_vline(xintercept = 0, color = "black", linetype = "dashed") +
+  geom_point(shape = 21, size = 2.5) + 
+  ggrepel::geom_label_repel(
+    aes(label = marker_id), 
+    data = filter(feature_volcano_tibble, feature_type != "Not significant"), 
+    size = 2.5, 
+    color = "black", 
+    show.legend = FALSE 
+  ) + 
+  scale_x_continuous(oob = scales::oob_squish_infinite) + 
+  scale_y_continuous(oob = scales::oob_squish_infinite) + 
+  facet_wrap(facets = vars(cluster_name), ncol = 2) + 
+  labs(
+    subtitle = "Differentially expressed markers in SJIA-PAP vs. control samples", 
+    x = "log2FC", 
+    y = "-log(p-value)",
+    fill = NULL
+  )
+
+```
+
+
 `r pagebreak()`
 
-# Differential Expression Analysis - within patients 
+# 8. Differential Expression Analysis - within patients 
+
+As above, we can compare healthy-looking and diseased-looking sections of the same SJIA-PAP patient samples using a linear model similar to that used in section 7: 
+
+$$
+y_{ij} = \beta_0 + \alpha_i + \beta_1 X_{j_{diseased}}, 
+$$
+
+where all the parameters on the right-hand side of the equation are defined as in section 6. 
 
 ```{r}
 paired_dea_results <- 
@@ -850,11 +958,13 @@ paired_dea_results %>%
 
 ```
 
-
+In this analysis, we see that CD16+ cells, B-cells, monocytes, T-regs, and the lung endothelium and epithelium themselves differe in the expression of several markers. 
 
 `r pagebreak()`
 
 # Spatial Analysis
 
-[surfactant analysis]
+Within FOVs, we can also annotate individual cells depending on whether they overlap with surfactant/lipid plaques and use these annotations to 
+
+## Annotate cells
 
