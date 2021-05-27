@@ -1,9 +1,9 @@
 ---
 title: "Aim 1 Differential Discovery Analysis"
 output: 
+  pdf_document: default
   github_document: 
     toc: true
-  pdf_document: default
 urlcolor: blue
 ---
 
@@ -43,24 +43,29 @@ surfactant_path <-
 healthy_fovs_in_pap_patients <- 
   c(9, 15, 20, 29, 40)
 
-functional_markers <- 
+other_markers <- 
    c(
-     "cd11c", "cd123", "cd14",
+     "cd11c", "cd14",
      "cd16", "cd163", "cd20", 
      "cd206", "cd209", "cd3", 
      "cd31", "cd4", "cd45", 
-     "cd45ro", "cd57", "cd68", 
+     "cd57", "cd68", 
      "cd8", "calprotectin", 
-     "epox", "foxp3", 
-     "grz_b", "h3k27me3", "h3k9ac", 
-     "hh3", "hla_dr", "ho_1", 
-     "ido", "if_ng", "ki67", 
-     "lag3", "mmp9", 
-     "na_kat_pase", "pd1", "pan_ck", 
-     "sma", "si", "tim3",
+     "epox", "foxp3",
+     "hh3", "hla_dr", 
+     "na_kat_pase", "pan_ck", 
+     "sma", "si",
      "tryptase", "vim", 
-     "i_nos", "p_s6"
+     "i_nos"
    )
+
+functional_markers <- 
+  c(
+    "cd45ro", "grz_b", "h3k27me3", "h3k9ac", "ho_1", 
+    "ido", "if_ng", "ki67", "mmp9", "pd1", 
+    "p_s6", "tim3"
+    
+  )
 ```
 
 `r pagebreak()`
@@ -686,7 +691,7 @@ pap_dea$de_results %>%
   topTable(top_n = 25) %>% 
   as_tibble() %>% 
   arrange(p_adj) %>% 
-  mutate(significance = if_else(p_adj < 0.05, "*", "")) %>% 
+  mutate(significance = if_else(p_adj < 0.1, "*", "")) %>% 
   knitr::kable()
 ```
 
@@ -715,7 +720,7 @@ dea_sjia_pap_vs_controls$de_results %>%
   topTable(top_n = 25) %>% 
   as_tibble() %>% 
   arrange(p_adj) %>% 
-  mutate(significance = if_else(p_adj < 0.05, "*", "")) %>% 
+  mutate(significance = if_else(p_adj < 0.1, "*", "")) %>% 
   knitr::kable()
 ```
 
@@ -744,13 +749,16 @@ dea_sjia_pap_vs_nonsjia_pap$de_results %>%
   topTable(top_n = 25) %>% 
   as_tibble() %>% 
   arrange(p_adj) %>% 
-  mutate(significance = if_else(p_adj < 0.05, "*", "")) %>% 
+  mutate(significance = if_else(p_adj < 0.1, "*", "")) %>% 
   knitr::kable()
 ```
 
-These results are interesting, as they suggest that the immune cells in SJIA-PAP and nonSJIA-PAP samples don't differ much in marker expression. Rather, it seems that mesenchymal cells and pneumocytes themselves differ in the `Lag3` protein, suggesting that Lag3 may be important for SJIA-PAP biology. 
+```{r, include = FALSE}
+#These results are interesting, as they suggest that the immune cells in SJIA-PAP and nonSJIA-PAP samples don't differ much in marker expression. Rather, it seems that mesenchymal cells and pneumocytes themselves differ in the `Lag3` protein, suggesting that Lag3 may be important for SJIA-PAP biology. 
+```
 
-```{r}
+
+```{r, include = FALSE}
 mibi_data %>% 
   group_by(fov_id, cluster_name, outcome) %>% 
   summarize(lag3 = mean(lag3)) %>% 
@@ -787,11 +795,12 @@ dea_control_vs_nonsjia_pap$de_results %>%
   topTable(top_n = 25) %>% 
   as_tibble() %>% 
   arrange(p_adj) %>% 
-  mutate(significance = if_else(p_adj < 0.05, "*", "")) %>% 
+  mutate(significance = if_else(p_adj < 0.1, "*", "")) %>% 
   knitr::kable()
 ```
 
-And from these results, we can see that neutrophils, T-cells, and Macrophages tend to have differentially expressed markers (whereas other cell populations don't). 
+And from these results, we can see that there are no differentially expressed functional markers between nonSJIA-PAP vs. control samples. 
+
 
 ## Visualization
 
@@ -803,7 +812,7 @@ dea_sjia_pap_vs_control_results <-
   topTable(all = TRUE) %>% 
   as_tibble() %>% 
   arrange(p_adj) %>% 
-  mutate(significance = if_else(p_adj < 0.05, "*", ""))  %>% 
+  mutate(significance = if_else(p_adj < 0.1, "*", ""))  %>% 
   rename(cluster_name = cluster_id)
 
 # number of significantly different markers in each cluster
@@ -813,7 +822,7 @@ dea_sjia_pap_vs_control_results %>%
   knitr::kable()
 ```
 
-As noted above, we can see that T-cells and Neutrophils have the significant marker differences. 
+As noted above, we can see that T-cells have the significant functional marker differences. 
 
 We can also make some volcano plots to summarize the different cluster-marker differences and their statistical significance: 
 
@@ -944,7 +953,7 @@ paired_dea_results <-
     sample_col = fov_id, 
     cluster_col = cluster_name, 
     fixed_effect_cols = fov_condition, 
-    random_effect_col = c(patient_id), 
+    random_effect_col = patient_id, 
     min_cells = 5, 
     min_samples = 5
   )
@@ -959,7 +968,10 @@ paired_dea_results %>%
 
 ```
 
-In this analysis, we see that CD16+ cells, B-cells, monocytes, T-regs, and the lung endothelium and epithelium themselves differe in the expression of several markers. 
+
+```{r, include = FALSE}
+#In this analysis, we see that CD16+ cells, B-cells, monocytes, T-regs, and the lung endothelium and epithelium themselves differ in the expression of several markers. 
+```
 
 `r pagebreak()`
 
@@ -1105,9 +1117,13 @@ surf_dea_results %>%
   arrange(p_adj) %>% 
   knitr::kable()
 ```
-We can see from this analysis that CD20 on Eosinophils is the only marker that is differentially expressed between cells within the same cluster that overlap with surfactant and those that don't. This is probably not that surprising, given that associations between individual immune cells and surfactant is probably a relatively short-term interaction (and maybe not long enough to mediate any change in marker expression?). I think the more important result in this case is the association of certain clusters of immune cells with surfactant (i.e. the differential abundance analysis above).  
+We can see from this analysis that cells that overlap with surfactant and those that do not don't differ in any of our functional markers. 
 
-```{r}
+```{r, include = FALSE}
+#We can see from this analysis that CD20 on Eosinophils is the only marker that is differentially expressed between cells within the same cluster that overlap with surfactant and those that don't. This is probably not that surprising, given that associations between individual immune cells and surfactant is probably a relatively short-term interaction (and maybe not long enough to mediate any change in marker expression?). I think the more important result in this case is the association of certain clusters of immune cells with surfactant (i.e. the differential abundance analysis above).
+```
+
+```{r, include = FALSE}
 mibi_data %>%
   filter(cluster_name == "Eosinophil", outcome == "SJIA-PAP") %>%
   group_by(fov_id,, patient_id, surfactant) %>%
